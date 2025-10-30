@@ -1,0 +1,4 @@
+Removed Pin From Net: NetName=BL_PWM Pin=U2-90
+Removed Pin From Net: NetName=TP_IRQ Pin=U2-91
+Added Pin To Net: NetName=TP_IRQ Pin=U2-90
+Added Pin To Net: NetName=BL_PWM Pin=U2-91

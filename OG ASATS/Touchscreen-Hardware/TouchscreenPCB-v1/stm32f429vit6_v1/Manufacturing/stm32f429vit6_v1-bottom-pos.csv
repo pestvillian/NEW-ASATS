@@ -1,0 +1,5 @@
+Ref,Val,Package,PosX,PosY,Rot,Side
+"C5","100n","C_0805_2012Metric_Pad1.18x1.45mm_HandSolder",175.612500,-66.300000,180.000000,bottom
+"C8","100n","C_0805_2012Metric_Pad1.18x1.45mm_HandSolder",191.850000,-80.700000,90.000000,bottom
+"C17","2u2","C_0805_2012Metric_Pad1.18x1.45mm_HandSolder",180.150000,-70.200000,-0.000000,bottom
+"J6","2x17 odd-even connector","PinSocket_2x17_P2.54mm_Vertical",163.000000,-104.610000,0.000000,bottom

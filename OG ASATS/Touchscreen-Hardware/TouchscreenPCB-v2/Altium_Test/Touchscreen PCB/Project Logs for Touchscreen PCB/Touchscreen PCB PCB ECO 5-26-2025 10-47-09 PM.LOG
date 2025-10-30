@@ -1,0 +1,5 @@
+Change Net Name : Old Net Name=NetC21_2 New Net Name=VBUS_FS
+Change Net Name : Old Net Name=NetFL1_C3 New Net Name=OTG_FS_DP
+Change Net Name : Old Net Name=NetFL1_D3 New Net Name=OTG_FS_DM
+Change Net Name : Old Net Name=NetR6_1 New Net Name=OTG_FS_OC
+Change Net Name : Old Net Name=NetR7_1 New Net Name=OTG_FS_PSO

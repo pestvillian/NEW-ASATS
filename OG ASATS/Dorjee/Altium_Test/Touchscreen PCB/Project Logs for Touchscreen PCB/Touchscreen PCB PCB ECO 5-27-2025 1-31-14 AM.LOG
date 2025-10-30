@@ -1,0 +1,24 @@
+Removed Pin From Net: NetName=VBUS_FS Pin=FL1-B3
+Removed Pin From Net: NetName=OTG_FS_DP Pin=FL1-C3
+Removed Pin From Net: NetName=GND Pin=FL1-D2
+Removed Pin From Net: NetName=OTG_FS_DM Pin=FL1-D3
+Added Component: Designator=D2(DIOM4336X265N)
+Add component (AddParameter): Name = "LCSC"; Value = "C7420377"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer"; Value = "hongjiacheng"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer Part Number"; Value = "SMBJ6.5CA"; VariantName = "[No Variations]"
+Added Component: Designator=D3(DIOM4336X265N)
+Add component (AddParameter): Name = "LCSC"; Value = "C7420377"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer"; Value = "hongjiacheng"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer Part Number"; Value = "SMBJ6.5CA"; VariantName = "[No Variations]"
+Added Component: Designator=D4(DIOM4336X265N)
+Add component (AddParameter): Name = "LCSC"; Value = "C7420377"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer"; Value = "hongjiacheng"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer Part Number"; Value = "SMBJ6.5CA"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=GND Pin=D2-1
+Added Pin To Net: NetName=VBUS_FS Pin=D2-2
+Added Pin To Net: NetName=GND Pin=D3-1
+Added Pin To Net: NetName=OTG_FS_DM Pin=D3-2
+Added Pin To Net: NetName=GND Pin=D4-1
+Added Pin To Net: NetName=OTG_FS_DP Pin=D4-2
+Added Pin To Net: NetName=OTG_FS_DM Pin=J2-2
+Added Pin To Net: NetName=OTG_FS_DP Pin=J2-3

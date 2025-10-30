@@ -1,0 +1,4 @@
+../Core/Src/XPT2046_touch.c:78:13:XPT2046_TouchSelect	1
+../Core/Src/XPT2046_touch.c:83:13:XPT2046_TouchUnselect	1
+../Core/Src/XPT2046_touch.c:88:6:XPT2046_TouchPressed	1
+../Core/Src/XPT2046_touch.c:93:6:XPT2046_TouchGetCoordinates	8

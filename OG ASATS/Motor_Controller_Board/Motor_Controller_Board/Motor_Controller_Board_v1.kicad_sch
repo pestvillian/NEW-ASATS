@@ -1,0 +1,163 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "2f03ad95-f17d-4603-9f9b-c868204db81c")
+	(paper "A4")
+	(title_block
+		(title "Motor Controller Board")
+		(rev "v1")
+		(company "University of California, Santa Cruz")
+	)
+	(lib_symbols)
+	(text "MOTOR CONTROLLER BOARD"
+		(exclude_from_sim no)
+		(at 66.548 18.288 0)
+		(effects
+			(font
+				(size 5.08 5.08)
+				(thickness 1.016)
+				(bold yes)
+			)
+		)
+		(uuid "d38e934e-c9ff-40a8-84c6-900a8d009a06")
+	)
+	(sheet
+		(at 17.78 48.26)
+		(size 74.93 99.06)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "1132a342-589f-4523-a20b-cee7da5a1aed")
+		(property "Sheetname" "Power Supply"
+			(at 17.78 47.5484 0)
+			(effects
+				(font
+					(size 2.54 2.54)
+					(thickness 0.508)
+					(bold yes)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "Power_Supply.kicad_sch"
+			(at 17.78 147.9046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "Motor_Controller_Board_v1"
+				(path "/2f03ad95-f17d-4603-9f9b-c868204db81c"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 102.87 48.26)
+		(size 88.9 99.06)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "41c029e7-cf72-41c6-b200-264a704f7fea")
+		(property "Sheetname" "Microcontroller"
+			(at 102.87 47.5484 0)
+			(effects
+				(font
+					(size 2.54 2.54)
+					(thickness 0.508)
+					(bold yes)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "Microcontroller.kicad_sch"
+			(at 102.87 147.9046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "Motor_Controller_Board_v1"
+				(path "/2f03ad95-f17d-4603-9f9b-c868204db81c"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 201.93 46.99)
+		(size 69.85 100.33)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "de697c7d-15b2-499b-acfa-e9ff24654033")
+		(property "Sheetname" "Stepper Drivers"
+			(at 201.93 46.2784 0)
+			(effects
+				(font
+					(size 2.54 2.54)
+					(thickness 0.508)
+					(bold yes)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "stepperDrivers.kicad_sch"
+			(at 201.93 147.9046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "Motor_Controller_Board_v1"
+				(path "/2f03ad95-f17d-4603-9f9b-c868204db81c"
+					(page "4")
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

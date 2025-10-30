@@ -1,0 +1,4 @@
+Removed Pin From Net: NetName=OTG_FS_PSO Pin=U2-78
+Removed Pin From Net: NetName=OTG_FS_OC Pin=U2-79
+Added Pin To Net: NetName=OTG_FS_OC Pin=U2-95
+Added Pin To Net: NetName=OTG_FS_PSO Pin=U2-96
