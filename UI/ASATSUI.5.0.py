@@ -11,7 +11,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.anchorlayout import AnchorLayout
 
-import qrcode
+
 import os
 #make scrolling more robust
 from kivy.config import Config
@@ -74,7 +74,7 @@ class AgitationStep(BoxLayout):
         self.height = 220 #making full step taller
 
         self.bind(minimum_height=self.setter('height'))
-        self.controller = controller
+        self.controller = controller # initialze controller object
         self.well_number = well_number
         self.step_number = step_number
          # Border background (optional for clarity)
@@ -155,7 +155,7 @@ class AgitationStep(BoxLayout):
         # Hook buttons to controller logic
         del_btn.bind(on_press=lambda x: controller.delete_step(self))
         # NOTE: controller here is the WellBlock; its .controller is MyGridLayout
-        copy_btn.bind(on_press=lambda x: controller.controller.clipboard_well(self.get_data_tuple()))
+        copy_btn.bind(on_press=lambda x: controller.controller.clipboard_well(self.get_data_tuple())) # this line breaks the copy button saying NoneType object is not callable
         paste_btn.bind(on_press=lambda x: controller.controller.clipboard_paste(self))
 
         button_bar.add_widget(del_btn)
@@ -234,6 +234,7 @@ class MovingStep(BoxLayout):
     def __init__(self, controller, well_number, **kwargs):
         super().__init__(**kwargs)
         self.controller = controller
+        self.well_number = well_number
         self.orientation = 'vertical'
         self.size_hint_y = None
         self.height = 180
@@ -465,9 +466,6 @@ class MyGridLayout(BoxLayout):
         with open(pname + ".txt", "w") as file:
             file.write(full_text)
 
-        # Create QR code of the protocol
-        qr = qrcode.make(full_text)
-        qr.save(f"{pname}_QR.png")
 
 
 # =====================================================================
@@ -607,6 +605,6 @@ class MyApp(App):
     def build(self):
         return MyGridLayout()
 
-
+#run the app
 if __name__ == '__main__':
     MyApp().run()
