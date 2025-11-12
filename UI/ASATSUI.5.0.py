@@ -6,6 +6,8 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.widget import Widget
+from kivy.uix.floatlayout import FloatLayout
 from kivy.graphics import Color, Rectangle
 from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserListView
@@ -320,19 +322,30 @@ class MyGridLayout(BoxLayout):
         self.clipboard_well = None
 
         # --- Scroll container for wells ---
-        self.scroll = ScrollView(size_hint=(1, 1), do_scroll_x=True, do_scroll_y=True)
-        anchor = AnchorLayout(anchor_y='bottom')
 
+        self.scroll = ScrollView(size_hint=(1, 1), do_scroll_x=True, do_scroll_y=False)
+
+        # Horizontal container for wells
         self.container = BoxLayout(
             orientation='horizontal',
-            spacing=40,
-            padding=[40, 40],
-            size_hint_y=None
+            spacing=60,
+            padding=[60, 40],
+            size_hint=(None, None),
+            height=400
         )
-
         self.container.bind(minimum_width=self.container.setter('width'))
+
+        # Anchor layout to keep the wells bottom-aligned
+        anchor = AnchorLayout(anchor_y='bottom', size_hint=(None, 1))
         anchor.add_widget(self.container)
+
+        # The key line: make the anchor's width track the container width
+        self.container.bind(width=lambda inst, val: setattr(anchor, 'width', val))
+
+        # Add anchor to scroll view
         self.scroll.add_widget(anchor)
+
+        # Add scroll view to your root layout
         self.add_widget(self.scroll)
 
 
@@ -478,7 +491,7 @@ class WellBlock(BoxLayout):
         self.controller = controller
         self.orientation = 'vertical'
         self.size_hint = (None, None)
-        self.size = (350, 650)
+        self.size = (350, 650) #problem affecting scrolling in well blocks
         self.spacing = 10
         self.padding = 10
         self.steps = []
@@ -537,7 +550,7 @@ class WellBlock(BoxLayout):
         else:
             self.step_container.add_widget(step)
         self.update_labels()
-        self.update_height()
+        #self.update_height() # this line is a problem with scrolling
 
     def delete_step(self, step):
         if step in self.steps:
@@ -545,7 +558,7 @@ class WellBlock(BoxLayout):
             self.step_container.remove_widget(step)
             # Renumber steps
             self.update_labels()
-            self.update_height()
+            #self.update_height() #this one is causing problems with scrolling
 
     def get_next_step(self, current_step):
         if current_step not in self.steps:
