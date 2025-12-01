@@ -156,9 +156,13 @@ class AgitationStep(BoxLayout):
 
         # Hook buttons to controller logic
         del_btn.bind(on_press=lambda x: controller.delete_step(self))
+
         # NOTE: controller here is the WellBlock; its .controller is MyGridLayout
-        copy_btn.bind(on_press=lambda x: controller.controller.clipboard_well(self.get_data_tuple())) # this line breaks the copy button saying NoneType object is not callable
-        paste_btn.bind(on_press=lambda x: controller.controller.clipboard_paste(self))
+        # correct bindings for copying/pasting a single agitation step
+        # `controller` here is the WellBlock; `controller.controller` is the MyGridLayout controller
+        copy_btn.bind(on_press=lambda *_: controller.controller.clipboard_set_agitation(self.get_data_tuple()))
+        paste_btn.bind(on_press=lambda *_: controller.controller.clipboard_paste_agitation(self))
+
 
         button_bar.add_widget(del_btn)
         button_bar.add_widget(copy_btn)
@@ -405,20 +409,35 @@ class MyGridLayout(BoxLayout):
         if not self.clipboard_well:
             return
         steps_data, moving_data = self.clipboard_well
-        # Clear and refill all steps
-        for step in well_block.steps:
-            well_block.step_container.remove_widget(step)
+
+        # Remove existing agitation step widgets
+        for step in list(well_block.steps):  # make a copy of the list
+            if step in well_block.step_container.children:
+                well_block.step_container.remove_widget(step)
         well_block.steps.clear()
+
+        # If there's a moving_step in the UI, temporarily remove it so we can append agitation steps above it
+        had_moving = hasattr(well_block, 'moving_step') and (well_block.moving_step in well_block.step_container.children)
+        if had_moving:
+            well_block.step_container.remove_widget(well_block.moving_step)
+
+        # Recreate agitation steps from clipboard data, preserving order
         for data in steps_data:
             step = AgitationStep(well_block.well_number, len(well_block.steps) + 1, well_block)
             step.set_data_tuple(data)
             well_block.steps.append(step)
             well_block.step_container.add_widget(step)
-        # Restore moving data
-        if hasattr(well_block, 'moving_step') and moving_data:
-            well_block.moving_step.set_data_dict(moving_data)
+
+        # Re-add moving_step at the bottom if it was present
+        if had_moving:
+            well_block.step_container.add_widget(well_block.moving_step)
+            if moving_data:
+                well_block.moving_step.set_data_dict(moving_data)
+
+        # Refresh UI bookkeeping
         well_block.update_labels()
-        well_block.update_height()
+        # no need to resize the whole well - scrolling handles overflow
+
 
     def delete_well(self, well_block):
         if len(self.wells) <= 1:
