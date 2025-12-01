@@ -190,24 +190,40 @@ class AgitationStep(BoxLayout):
         for field, label in self.label_widgets.items():
             label.text = f"{field} (Well {self.well_number} - Step {self.step_number})"
 
-    # Keyboard navigation helpers
-    def move_focus_to_next(self, instance):
-        idx = self.inputs.index(instance)
-        if idx < len(self.inputs) - 1:
-            self.inputs[idx + 1].focus = True
-        else:
-            next_step = self.controller.get_next_step(self)
-            if next_step:
-                next_step.inputs[0].focus = True
+    def move_focus_to_next(self, instance, *args):
+        fields = list(self.inputs.values())
+        idx = fields.index(instance)
 
-    def move_focus_to_previous(self, instance):
-        idx = self.inputs.index(instance)
+        # Case 1: Go to the next field normally
+        if idx < len(fields) - 1:
+            fields[idx + 1].focus = True
+            return
+
+        # Case 2: This is the last field in an Agitation block → move to Moving block
+        if hasattr(self, "well_block_ref"):  # Means this is an AgitationBlock
+            moving_first = self.well_block_ref.get_first_moving_field()
+            if moving_first:
+                moving_first.focus = True
+                return
+
+        # Case 3: Fall back to the next step in the system (other wells)
+        next_step = self.controller.get_next_step(self)
+        if next_step:
+            list(next_step.inputs.values())[0].focus = True
+
+
+    def move_focus_to_previous(self, instance, *args):
+        fields = list(self.inputs.values())
+        idx = fields.index(instance)
+
         if idx > 0:
-            self.inputs[idx - 1].focus = True
+            fields[idx - 1].focus = True
         else:
+            # Go to previous step if exists
             prev_step = self.controller.get_previous_step(self)
             if prev_step:
-                prev_step.inputs[-1].focus = True
+                list(prev_step.inputs.values())[-1].focus = True
+
 
     # Converts this step into a single protocol line
     def get_step_data(self):
@@ -554,8 +570,12 @@ class WellBlock(BoxLayout):
         self.add_step()
         self.moving_step = MovingStep(self.well_number, self.controller)
         self.step_container.add_widget(self.moving_step)
-
-
+    #attain the first moving field
+    def get_first_moving_field(self):
+        if self.moving_step:
+            return list(self.moving_step.inputs.values())[0]
+        return None
+    
     def add_step(self, *args):
         step = AgitationStep(self.well_number, len(self.steps) + 1, controller=self)
         self.steps.append(step)
