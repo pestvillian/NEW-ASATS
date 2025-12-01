@@ -31,18 +31,18 @@ enum ProtocolType {
   MOVING,     // 'M'
   INVALID     // For unknown protocol types
 };
-
+//parameters of said protocols
 struct Protocol {
   ProtocolType type;
-  uint8_t volume;
-  uint8_t percentVolume;
-  uint8_t speed;
-  uint8_t duration;
-  uint8_t initialSurfaceTime;
-  uint8_t stopAtSequences;
-  uint8_t sequencePauseTime;
-  uint8_t pausetime;
-  uint8_t repeats;
+  uint8_t volume; //volume of liquid in a given well
+  uint8_t percentVolume; // amount of liquid to be displaced
+  uint8_t speed; //speed for motors to run at
+  uint8_t duration; // time for agitation to occur
+  uint8_t initialSurfaceTime; // time to let liquid drip off into next well
+  uint8_t stopAtSequences;//number of sections to pause at, in a given well
+  uint8_t sequencePauseTime; // time spent at each point in the well
+  uint8_t pausetime; // amount of rest time in between agitations
+  uint8_t repeats; // number of repeated agitations
 };
 
 // Protocol Array
@@ -413,7 +413,11 @@ void homeAgitation() {
 }
 
 
-
+/**
+ * @brief:send each motor one at a time to the the home direction until the limit switch is hit
+ * @param none
+ * @retval none
+ */
 void autoHome() {
   //initialize motor parameters
   //Horizontal
@@ -499,6 +503,11 @@ void autoHome() {
   moveMotorX(1, 6, 55);     // move X right
   //moveMotorA(1, 6, 20);   // move A down posotive goes down
 }
+
+
+
+
+
 void moveMotorA(int DIR, uint32_t speed, float distance) {  //
   // convert distance to steps. for now i'm keeping it in number of revolutions
   uint32_t steps = distanceToStepsA(distance);
