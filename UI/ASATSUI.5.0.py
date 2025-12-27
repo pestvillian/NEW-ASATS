@@ -510,7 +510,7 @@ class MyGridLayout(BoxLayout):
                 full_protocol.append(well.moving_step.get_moving_data())
 
         # Write to text file
-        full_text = "\r\n".join(full_protocol)
+        full_text = "\r\n".join(full_protocol) #puts return and newlines between protocol instructions
         with open(pname + ".txt", "w") as file:
             file.write(full_text)
 
