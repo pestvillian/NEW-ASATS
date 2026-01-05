@@ -49,12 +49,16 @@ struct Protocol {
 char *protocolInstructions[] = {
   "B1123501000602",
   "M0061199",
+  "B9063501000101",
   "B1063500950602",
   "M0011199",
+  "B9063501000101",
   "B1123500950602",
   "M0611199",
+  "B9063501000101",
   "B1063500950602",
   "M0011199",
+  "B9063501000101",
   "B9993501000102"  //last step
 };
 
@@ -193,10 +197,10 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint8_t agitateDuration, uint8_t to
   //   //float distance = 33.30;  //350ul = 33.3mm away from home position higher volumes make lower distances
   //   //float depth_mm = 38.0 * (100 / 100.0);// THIS MUST SET THE BEGINING HEIGHT OF THE COMBS //check me
   //float depth_mm = 32 * (totalVolume / 100.0);                    // Total immersion depth in mm
+ //changed from 40 to 37 after changing out holding plate
+  float depth_mm = (42.0 * (totalVolume / 350.0)); //mapping of volume given in ul to a distance from home position in mm
 
-  float depth_mm = (40.0 * (totalVolume / 350.0)); //mapping of volume given in ul to a distance from home position in mm
-
-  float stroke_mm = (40.0 - depth_mm) * (percentDepth / 100.0);  // Agitation stroke depth in mm
+  float stroke_mm = (42.0 - depth_mm) * (percentDepth / 100.0);  // Agitation stroke depth in mm
   //uint32_t stroke_steps = stroke_mm / 0.00625;                    // Convert mm to steps // HOW tf did we get this number???
   uint32_t stroke_steps = stroke_mm * ((3200.0 / 20.0) + 0.5f);  //I think this is right
 
