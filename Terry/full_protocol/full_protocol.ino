@@ -48,8 +48,9 @@ struct Protocol {
 // Protocol Array
 char *protocolInstructions[] = {
   "B1123501000602",
-  "M0061199",
-  "B9063501000101",
+  "M0601199", // checking for drip time 
+  "B9063501000101", //this is fucking with us now
+
   "B1063500950602",
   "M0011199",
   "B9063501000101",
@@ -109,16 +110,18 @@ void setup() {
     Serial.print("Protocol: ");
     Serial.println(protocolInstructions[i]);
     // for each parsed protocol print out its information based on type
+    
     switch (parsed.type) {
       // call the agitation function
       case AGITATION:
         // agitate for as many times as the parameter sets
         //before you loop through the number of repeats you need to insert the combs into the wells
-        moveMotorY(1, 1, 12);  //insert body into well
+        
         for (int i = 0; i < parsed.repeats; i++) {       
           agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);  // agitate the motors
           delay(1000 * parsed.pausetime);                                                     //delay time inbetween repeats
         }
+
 
         break;
 
@@ -129,6 +132,8 @@ void setup() {
 
       case MOVING:  // moving function not tested yet.
         moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+        delay(2000);
+        //moveMotorY(1, 1, 12);  //insert body into well
 
         break;
       case INVALID:
@@ -146,9 +151,7 @@ void moveSample(uint8_t initialSurfaceTime, uint8_t speed, uint8_t stopAtSequenc
   // uint16_t xspeed = mapSpeedX(speed);
  
   homeAgitation();  // home the agitation motor and wait
-  //moveMotorY(-1, 1, 12);  //back to home height
-
-  pauseMotors(initialSurfaceTime);
+ 
   // fulltraydepth is about 41mm
   uint8_t segs = 33.6 / stopAtSequences;  // franctions of segment distances
   moveMotorY(1, 1, 33.6);                 // move all the way to the bottom then go back to home to prevent clustering
@@ -160,16 +163,17 @@ void moveSample(uint8_t initialSurfaceTime, uint8_t speed, uint8_t stopAtSequenc
     moveMotorY(1, 1, segs);
     delay(1000 * sequencePauseTime);
   }
-
+  // check me here. some numbers may change.
   moveMotorY(-1, speed, 45.6);  // back to idle hieght
   delay(1000);                  // delay for smoothness
   moveMotorX(1, speed, 9);      // increased from 10 to 9
   delay(1000);
-  moveMotorY(1, speed, 20);  // back to idle hieght
+  moveMotorY(1, speed, 12);  // back to idle hieght
   delay(1000);
-  moveMotorA(1, speed, 10);  // positive 1 go down
-  delay(1000);
-  moveMotorY(-1, speed, 20);
+  moveMotorA(1, speed, 12);  // positive 1 go down to the inserted height
+  //pauseMotors(initialSurfaceTime); // let it drip while it is detached form the magnets
+  delay(1000 * initialSurfaceTime); // let it drip while it is detached form the magnets
+  //moveMotorY(-1, speed, 20); //remove this because at this point we should be at the point where the combs are slightly in the rack
   homeAgitation();
 }
 
@@ -505,6 +509,7 @@ void autoHome() {
   //position over test rack
   moveMotorY(-1, 9, 44.6);  // move Y up
   moveMotorX(1, 6, 55);     // move X right
+  moveMotorY(1, 1, 12);  //insert body into well
   //moveMotorA(1, 6, 20);   // move A down posotive goes down
 }
 
