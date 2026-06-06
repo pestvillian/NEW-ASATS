@@ -1,0 +1,414 @@
+#include <AccelStepper.h>
+
+//#include <SoftwareSerial.h>
+
+// --- Pin Assignments ---
+#define HORIZONTAL_STEP 5
+#define HORIZONTAL_DIR 4
+#define MAGNET_STEP 2
+#define MAGNET_DIR 3
+#define COMB_STEP 19
+#define COMB_DIR 18
+//Limit pins
+#define H_home 7 //homing switch for horizontal
+#define C_ready 15  //botom most light sensor
+#define Mid 1       //misdle switch
+#define M_ready 6   //topmost light sensor
+
+#define fan_pin 14
+//enable pin of motherboard
+#define HORIZONTAL_EN 21
+#define COMB_EN 22
+#define MAGNET_EN 23
+
+// --- Create Stepper Instances ---
+AccelStepper HORIZONTAL(AccelStepper::DRIVER, HORIZONTAL_STEP, HORIZONTAL_DIR);
+AccelStepper MAGNET(AccelStepper::DRIVER, MAGNET_STEP, MAGNET_DIR);
+AccelStepper COMB(AccelStepper::DRIVER, COMB_STEP, COMB_DIR);
+
+// logic for switchs
+bool horizontalTriggered = false;
+bool magnetTriggered = false;
+bool combTriggered = false;
+
+bool homingH = false;  //home horizontal init
+bool homingM = true;   //home megnet init
+bool homingC = false;  //hom comb init
+//fuck UART
+// types of protocolInstructions
+enum ProtocolType {
+  AGITATION,  // 'B'
+  PAUSING,    // 'P'
+  MOVING,     // 'M'
+  INVALID     // For unknown protocol types
+};
+//parameters of said protocols
+struct Protocol {
+  ProtocolType type;
+  uint8_t volume;              //volume of liquid in a given well
+  uint8_t percentVolume;       // amount of liquid to be displaced
+  uint8_t speed;               //speed for motors to run at
+  uint8_t duration;            // time for agitation to occur
+  uint8_t initialSurfaceTime;  // time to let liquid drip off into next well
+  uint8_t stopAtSequences;     //number of sections to pause at, in a given well
+  uint8_t sequencePauseTime;   // time spent at each point in the well
+  uint8_t pausetime;           // amount of rest time in between agitations
+  uint8_t repeats;             // number of repeated agitations
+};
+
+// Protocol Array
+char *protocolInstructions[] = {
+  "B1123501000602",
+  "M0601199",        // checking for drip time
+  "B9063501000101",  //this is fucking with us now
+
+  "B1063500950602",
+  "M0011199",
+  "B9063501000101",
+  "B1123500950602",
+  "M0611199",
+  "B9063501000101",
+  "B1063500950602",
+  "M0011199",
+  "B9063501000101",
+  "B9993501000102"  //last step
+};
+
+
+// global size of protocolInstructions
+int size = sizeof(protocolInstructions) / sizeof(protocolInstructions[0]);  // Get number of elements
+
+uint8_t home();
+uint32_t distanceToStepsC(float distance);
+unsigned int mapSpeedC(float value);
+
+
+void setup() {
+
+
+  Serial.begin(9600);
+
+  delay(500);
+  //direction Pins
+  pinMode(HORIZONTAL_DIR, OUTPUT);
+  pinMode(MAGNET_DIR, OUTPUT);
+  pinMode(COMB_DIR, OUTPUT);
+  //step pin
+  pinMode(HORIZONTAL_STEP, OUTPUT);
+  pinMode(MAGNET_STEP, OUTPUT);
+  pinMode(COMB_STEP, OUTPUT);
+
+  pinMode(H_home, INPUT_PULLUP);   //horizontal switch
+  pinMode(M_ready, INPUT_PULLUP);  //magnet switch
+  pinMode(Mid, INPUT_PULLUP);      //middle lightswitch
+  pinMode(C_ready, INPUT_PULLUP);  //comb switch
+  //Enable pins output
+  pinMode(HORIZONTAL_EN, OUTPUT);
+  pinMode(MAGNET_EN, OUTPUT);
+  pinMode(COMB_EN, OUTPUT);
+
+  pinMode(fan_pin, OUTPUT);
+  digitalWrite(fan_pin, LOW);
+  // // Enable outputs
+  HORIZONTAL.enableOutputs();
+  MAGNET.enableOutputs();
+  COMB.enableOutputs();
+
+
+
+  //configure homing parameters for each motor
+  HORIZONTAL.setMaxSpeed(700);
+  HORIZONTAL.setAcceleration(9999);
+  HORIZONTAL.moveTo(1600);  //far distance posotive home
+
+  MAGNET.setMaxSpeed(800);
+  MAGNET.setAcceleration(9999);
+  MAGNET.moveTo(100000);  //magnet home posotive distance
+
+  COMB.setMaxSpeed(1000);
+  COMB.setAcceleration(999999);  //3200 steps to 1 rev
+  COMB.moveTo(100000000);        //comb home posotive distance
+
+  //turn on motor drivers
+  digitalWrite(HORIZONTAL_EN, LOW);
+  digitalWrite(COMB_EN, LOW);
+  digitalWrite(MAGNET_EN, LOW);
+
+  while (1) {
+    if (home() == 1) {//should home the gantry to right above the wells
+      break;
+    } else {
+      continue;
+    }
+
+    Serial.println("Homing!!\n");
+  }
+ // agitateMotors(9, 20, 1100, 50);  // 1100 is total volume
+
+  // moveComb(-1,1,15);//15mm down
+}
+void moveComb(int DIR, uint32_t speed, float distance) {  //
+  // convert distance to steps. for now i'm keeping it in number of revolutions
+  uint32_t steps = distanceToStepsC(distance);
+  uint16_t stepFrequency = mapSpeedC(speed);  // adjust to control speed (Hz)
+  uint32_t stepdir = steps * DIR;
+  //configure motor parameters
+  COMB.setMaxSpeed(stepFrequency);
+  COMB.setAcceleration(300000);
+  COMB.move(stepdir);
+  //move motor to location
+  while (1) {
+    //run the A motor
+    COMB.run();
+
+    //Serial.println("I'm in the loop");
+    if (COMB.distanceToGo() == 0) {
+      COMB.stop();
+      break;
+      //Serial.println("I broke the loop");
+    }
+    delayMicroseconds(500);  // or try 100–500 µ
+  }
+}
+uint32_t distanceToStepsC(float distance) {  // about 8.75mm{
+  //return distance * 200 * 16; // one rotation for full step
+  return (uint32_t)(distance * (1600.0 / 20.0) + 0.5f);  //changed from 3200 to 1600
+}
+// num1 and num2 are the integer ranges of speed, num3 and num4 are the frequency ranges
+unsigned int mapSpeedC(float value) {
+  return (value - 1) * (12000 - 5000) / (9 - 1) + 5000;
+}
+
+void combPushMagnet(uint8_t steps) {
+  digitalWrite(COMB_EN, LOW);     //comb on
+  digitalWrite(MAGNET_EN, HIGH);  //magnet off
+
+  COMB.moveTo(steps);  //weird steps
+
+  while (COMB.distanceToGo() != 0) {
+    COMB.run();  //run
+  }
+  digitalWrite(MAGNET_EN, LOW);  //magnet on to save its place
+}
+void magnetPushComb(uint8_t steps) {
+  digitalWrite(COMB_EN, HIGH);   //comb off
+  digitalWrite(MAGNET_EN, LOW);  //magnet on
+  //magnet ne
+  MAGNET.moveTo(-steps);  //weird steps
+
+  while (MAGNET.distanceToGo() != 0) {
+    MAGNET.run();  //run
+  }
+  digitalWrite(COMB_EN, LOW);  //comb on to save its place
+}
+
+/**
+ * @brief: Pause the motor for a number of seconds
+ * @param pauseDuration: pause duration in seconds
+ * @retval: none
+ */
+void pauseMotors(uint8_t pauseDuration) {
+  HORIZONTAL.stop();
+  MAGNET.stop();
+  COMB.stop();
+  delay(pauseDuration * 1000);  // convert from seconds to milliseconds for delay function
+}
+
+/**
+ * @brief: move agitaton motor up and down rapidly
+ * @param agitateSpeed: speed of motor from 1-9
+ * @param agitateDuration: duration of agitation from 1-?
+ * @param totalVolume: irrelevant parameter?
+ * @param percentDepth: how far the agitation goes up and down from 0-100
+ * @retval: 1 if finished, 0 if error
+ * @author: Gregory Ziegler
+ */
+uint8_t agitateMotors(uint16_t agitateSpeed, uint8_t agitateDuration, uint16_t totalVolume, uint16_t percentDepth) {
+  //42.2 = height of whole well
+  delay(200);
+  COMB.enableOutputs();
+  //30 mm is the distance between the tip of the combs inserted into the wells and the bottom of the wells
+  // Convert input values to physical parameters
+  uint16_t agitationFrequency = mapSpeedC(agitateSpeed);  // Frequency in steps/sec
+  COMB.setMaxSpeed(agitationFrequency);                   // High speed target
+  COMB.setAcceleration(3000000);                          // Very aggressive acceleration
+
+  // Define positions
+  uint16_t top = abs((totalVolume / 50.0) - (42.2) + 0.5f);  //plus initia position??? was 50 well hright -(42.2)
+
+  uint16_t agitDistance = (abs(top-42.2) * (percentDepth / 100.0));  //percentage of liquid to be displaced
+  uint16_t agitSteps = distanceToStepsC(agitDistance);
+  int movingDown = 1;  //should initially be true
+
+  uint16_t topSteps = distanceToStepsC(top);  //
+  // Start timed agitation loop
+  unsigned long startTime = millis();  //snag initial time
+
+  //move to top of sample volume
+  COMB.moveTo(-topSteps);             //topSteps
+  while (COMB.distanceToGo() != 0) {  // do comb run
+    COMB.run();                       // run until we are at the top of the solution
+  }
+  delay(2000);
+
+  //move to percent depth of liquid
+  COMB.move(-agitSteps);
+  while (COMB.distanceToGo() != 0) {
+    COMB.run();
+  }
+
+  //alternate direcitons
+  while (millis() - startTime < (agitateDuration * 1000)) {//millis() - startTime < (agitateDuration * 1000)
+    COMB.run();                      // run the motor
+    if (COMB.distanceToGo() == 0) {  //check if we hit the desired agitation depth
+      //COMB.moveTo(movingDown ? top : agitDistance); //changed bottom to agitDistance
+      COMB.move(movingDown *agitSteps);
+      movingDown = movingDown * -1;
+    }
+  }
+
+  COMB.stop();  //hault
+  return 1;
+}
+
+
+
+uint8_t home() {
+  // //uart debug
+  uint8_t homed = 0;
+  //homing switches
+  if (homingM == true) {
+    if (digitalRead(M_ready) == 0) {  //home pin for magnets
+      magnetTriggered = true;
+    }
+    if (magnetTriggered != true) {
+      MAGNET.run();  // keep moving
+      // keep looping
+    } else {                         //when horizontalTriggerd == TRUE we stop
+      MAGNET.stop();                 //hault motor
+      MAGNET.setCurrentPosition(0);  //now at home position
+      homingM = false;               // we are home
+      homingC = true;
+    }
+  }
+  //next motor in the sequence
+  if (homingC == true) {          //checking if the midle switch is inverted
+    if (digitalRead(Mid) == 0) {  //mid pin for comb
+      combTriggered = true;
+    }
+    if (combTriggered != true) {
+      COMB.run();  // keep moving
+      // keep looping
+    } else if (combTriggered == true) {  //when horizontalTriggerd == TRUE we stop
+      COMB.stop();                       //hault motor
+      COMB.setCurrentPosition(0);        //now at home position
+      homingC = false;                   // we are home
+      homingH = true;
+    }
+  }
+
+  if (homingH == true) {
+    if (digitalRead(H_home) == 0) {  //horizontal
+      horizontalTriggered = true;
+    }
+    if (horizontalTriggered != true) {
+      HORIZONTAL.run();  // keep moving
+      // keep looping
+    } else {                             //when horizontalTriggerd == TRUE we stop
+      HORIZONTAL.stop();                 //hault motor
+      HORIZONTAL.setCurrentPosition(0);  //now at home position
+      homingH = false;                   // we are home
+                                         // we want to home the magnet motor now
+    }
+  }
+
+  //check if we are done
+  if (homingH == false && homingM == false && homingC == false) {
+    COMB.moveTo(-80000);  //long steps in down direction
+    while (1) {
+      COMB.run();                       //get stuck here          // keep moving
+      if (digitalRead(C_ready) == 0) {  //comb now at the ready position
+        COMB.setCurrentPosition(0);
+        homed = 1;
+        break;  //leave loop
+                //homing done
+      }
+    }
+    COMB.stop();  //hault motor
+  } else {
+    homed = 0;
+  }
+
+  return homed;
+}
+
+void moveMotorH(int DIR, uint32_t speed, float distance) {  // 1 step is 1.8 degrees
+  // convert distance to steps. for now i'm keeping it in number of revolutions
+  uint32_t steps = distanceToStepsH(distance);
+  uint16_t stepFrequency = mapSpeedH(speed);  // adjust to control speed (Hz)
+  uint32_t stepdir = steps * DIR;
+
+  //configure motor parameters
+  HORIZONTAL.setMaxSpeed(stepFrequency);
+  HORIZONTAL.setAcceleration(30000);
+  HORIZONTAL.move(stepdir);
+  //move motor to location
+  while (1) {
+    //run motor
+    HORIZONTAL.run();
+
+    //Serial.println("I'm in the loop");
+    if (HORIZONTAL.distanceToGo() == 0) {
+      HORIZONTAL.stop();
+      break;
+      //Serial.println("I broke the loop");
+    }
+    delayMicroseconds(500);  // or try 100–500 µ
+  }
+}
+// angle (degrees) = (arc length / radius) * (180 / π)
+uint32_t distanceToStepsH(float distance)  // about 8.75mm
+{
+  // 200 steps = 1 revolution
+  //for returning # of steps per rotation use distance * 200
+  //30mm per 1 revolution
+  //1mm = 20/3
+
+  //return distance * 200;
+  //the number i devide 200 by is what i'm changing to get the best accuracy
+  return (uint32_t)(distance * (200.00 / 31.24) + 0.5f);
+}
+// num1 and num2 are the integer ranges of speed, num3 and num4 are the frequency ranges
+unsigned int mapSpeedH(float value) {
+  return (value - 1) * (1000 - 300) / (9 - 1) + 300;
+}
+
+
+Protocol parseProtocol(char *protocol) {
+}
+
+// Function to determine protocol type
+ProtocolType getProtocolType(char *protocol) {
+  // based on the first character of the protocolInstructions you can see what type of protocol it is
+  switch (protocol[0]) {  // Check the first character
+    case 'B':
+      return AGITATION;
+      break;
+    case 'P':
+      return PAUSING;
+      break;
+    case 'M':
+      return MOVING;
+      break;
+    default:
+      Serial.print("Error: Invalid protocol type '");
+      Serial.print(protocol[0]);
+      Serial.println("'");
+      return INVALID;
+      break;
+  }
+}
+
+// main loop
+void loop() {
+}
