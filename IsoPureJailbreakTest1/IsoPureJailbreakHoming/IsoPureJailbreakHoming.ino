@@ -10,7 +10,7 @@
 #define COMB_STEP 19
 #define COMB_DIR 18
 //Limit pins
-#define H_home 7 //homing switch for horizontal
+#define H_home 7    //homing switch for horizontal
 #define C_ready 15  //botom most light sensor
 #define Mid 1       //misdle switch
 #define M_ready 6   //topmost light sensor
@@ -20,6 +20,10 @@
 #define HORIZONTAL_EN 21
 #define COMB_EN 22
 #define MAGNET_EN 23
+
+
+#define clearSampleDist 37.0
+#define clamplingOffset 22.0  //tuning this one
 
 // --- Create Stepper Instances ---
 AccelStepper HORIZONTAL(AccelStepper::DRIVER, HORIZONTAL_STEP, HORIZONTAL_DIR);
@@ -122,7 +126,7 @@ void setup() {
   HORIZONTAL.moveTo(1600);  //far distance posotive home
 
   MAGNET.setMaxSpeed(800);
-  MAGNET.setAcceleration(9999);
+  MAGNET.setAcceleration(999999);
   MAGNET.moveTo(100000);  //magnet home posotive distance
 
   COMB.setMaxSpeed(1000);
@@ -135,7 +139,7 @@ void setup() {
   digitalWrite(MAGNET_EN, LOW);
 
   while (1) {
-    if (home() == 1) {//should home the gantry to right above the wells
+    if (home() == 1) {  //should home the gantry to right above the wells
       break;
     } else {
       continue;
@@ -143,10 +147,124 @@ void setup() {
 
     Serial.println("Homing!!\n");
   }
- // agitateMotors(9, 20, 1100, 50);  // 1100 is total volume
 
+
+
+  // //comb motor is intermittently turining on and off when the system is idle holding torque
+  agitateMotors(9, 5, 1100, 50);                      // 1100 is total volume
+  moveMotorM(-1, 6, 8);                               //push comb axis with magnet
+  magnetPushComb(102.0);                              //tuning distance
+  pauseMotors(5);                                     //wait to let the beads attach to combs
+                                                      //this part needs to be tested!!!!!!!
+  combPushMagnet(clearSampleDist);                    //move sample out of rack good
+  moveMotorH(-1, 1, 7.5);                             //distance between wells
+  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
+  homeMagnet();                                       //testing...working?????
   // moveComb(-1,1,15);//15mm down
 }
+
+
+void homeMagnet() {
+  //configure magnet axis
+  magnetTriggered = false;  //
+  MAGNET.setMaxSpeed(800);
+  MAGNET.setAcceleration(9999999);//AGRESSIVE
+  MAGNET.moveTo(9999999);  //posotive home direction
+  MAGNET.enableOutputs();//idk
+  //home agitation motor
+  while (1) {
+    //run the A motor
+    if (digitalRead(M_ready) == 0) {
+      horizontalTriggered = true;//var for keeping track of magnet
+    }
+    MAGNET.run();//MOVE THE FUKIN MOTOR
+    //Serial.println("I'm in the loop");
+    if (horizontalTriggered == true) {  //magnet home switch triggered
+      MAGNET.stop();
+      break;
+      //Serial.println("I broke the loop");
+    }
+    delayMicroseconds(500);  // or try 100–500 µ
+  }
+  MAGNET.setCurrentPosition(0);
+}
+//logic for moving horizontal axis exact distance
+void moveMotorH(int DIR, uint32_t speed, float distance) {  // 1 step is 1.8 degrees
+  // convert distance to steps. for now i'm keeping it in number of revolutions
+  uint32_t steps = distanceToStepsH(distance);
+  uint16_t stepFrequency = mapSpeedH(speed);  // adjust to control speed (Hz)
+  uint32_t stepdir = steps * DIR;
+
+  //configure motor parameters
+  HORIZONTAL.setMaxSpeed(stepFrequency);
+  HORIZONTAL.setAcceleration(30000);
+  HORIZONTAL.move(stepdir);
+  //move motor to location
+  while (1) {
+    //run motor
+    HORIZONTAL.run();
+
+    //Serial.println("I'm in the loop");
+    if (HORIZONTAL.distanceToGo() == 0) {
+      HORIZONTAL.stop();
+      break;
+      //Serial.println("I broke the loop");
+    }
+    delayMicroseconds(500);  // or try 100–500 µ
+  }
+}
+// angle (degrees) = (arc length / radius) * (180 / π)
+uint32_t distanceToStepsH(float distance)  // about 8.75mm
+{
+  // 200 steps = 1 revolution
+  //for returning # of steps per rotation use distance * 200
+  //30mm per 1 revolution
+  //1mm = 20/3
+
+  //return distance * 200;
+  //the number i devide 200 by is what i'm changing to get the best accuracy
+  return (uint32_t)(distance * (200.00 / 31.24) + 0.5f);
+}
+//logic for moing the Magnet Axis exact distances
+void moveMotorM(uint32_t DIR, uint32_t speed, float distance) {  // 1 step is 1.8 degrees
+                                                                 // convert distance to steps. for now i'm keeping it in number of revolutions
+  uint32_t steps = distanceToStepsM(distance);
+  uint16_t stepFrequency = mapSpeedM(speed);  // adjust to control speed (Hz)
+  uint32_t stepdir = steps * DIR;             //DIR == 1 goes down, DIR == -1 goes up
+  //configure motor parameters
+  MAGNET.setMaxSpeed(stepFrequency);
+  MAGNET.setAcceleration(300000);
+  MAGNET.move(stepdir);
+  //move motor to location
+  while (1) {
+    //run motor
+    MAGNET.run();
+
+    //Serial.println("I'm in the loop");
+    if (MAGNET.distanceToGo() == 0) {  //break when the steps have steppec
+      MAGNET.stop();
+      break;
+      //Serial.println("I broke the loop");
+    }
+    delayMicroseconds(500);  // or try 100–500 µ
+  }
+}
+// angle (degrees) = (arc length / radius) * (180 / π)
+uint32_t distanceToStepsM(float distance)  // about 8.75mm
+{
+  //return distance * 200;// tuning distance measurements for new screw
+  return (uint32_t)(distance * (200.0 / 8.0) + 0.5f);  //shoulf convert desired distance traveld to a number of steps to send the motor
+}
+// num1 and num2 are the integer ranges of speed, num3 and num4 are the frequency ranges
+unsigned int mapSpeedM(float value) {
+  return (value - 1) * (1000 - 200) / (9 - 1) + 200;  //changed from 400 to 350 hz as bottom of frequency range
+}
+
+// num1 and num2 are the integer ranges of speed, num3 and num4 are the frequency ranges
+unsigned int mapSpeedH(float value) {
+  return (value - 1) * (1000 - 300) / (9 - 1) + 300;
+}
+//logic for moving comb to axact distances
 void moveComb(int DIR, uint32_t speed, float distance) {  //
   // convert distance to steps. for now i'm keeping it in number of revolutions
   uint32_t steps = distanceToStepsC(distance);
@@ -170,7 +288,7 @@ void moveComb(int DIR, uint32_t speed, float distance) {  //
     delayMicroseconds(500);  // or try 100–500 µ
   }
 }
-uint32_t distanceToStepsC(float distance) {  // about 8.75mm{
+uint32_t distanceToStepsC(float distance) {  // 20mm lead
   //return distance * 200 * 16; // one rotation for full step
   return (uint32_t)(distance * (1600.0 / 20.0) + 0.5f);  //changed from 3200 to 1600
 }
@@ -179,26 +297,31 @@ unsigned int mapSpeedC(float value) {
   return (value - 1) * (12000 - 5000) / (9 - 1) + 5000;
 }
 
-void combPushMagnet(uint8_t steps) {
-  digitalWrite(COMB_EN, LOW);     //comb on
-  digitalWrite(MAGNET_EN, HIGH);  //magnet off
 
-  COMB.moveTo(steps);  //weird steps
+//logic to use the comb axis to push the magnet axis up so we can stay clamped together without losing the smaple
+void combPushMagnet(float pushDist) {  //working...just kidding
+  digitalWrite(COMB_EN, LOW);          //comb on
+  digitalWrite(MAGNET_EN, HIGH);       //magnet off
 
-  while (COMB.distanceToGo() != 0) {
-    COMB.run();  //run
-  }
+  moveComb(1, 1, pushDist);  //move the comb up
+
+  // while (COMB.distanceToGo() != 0) {
+  //   COMB.run();  //run
+  // }
+  delay(200);                    //give the motor a chance to be in a fixed position...i heard a click and got scared
   digitalWrite(MAGNET_EN, LOW);  //magnet on to save its place
 }
-void magnetPushComb(uint8_t steps) {
+//logic to use the magnet axis to push the comb axis up so we can stay clamped together without losing the smaple
+void magnetPushComb(float pushDist) {
   digitalWrite(COMB_EN, HIGH);   //comb off
   digitalWrite(MAGNET_EN, LOW);  //magnet on
   //magnet ne
-  MAGNET.moveTo(-steps);  //weird steps
+  moveMotorM(-1, 9, pushDist);  //push comb axis with magnet
 
-  while (MAGNET.distanceToGo() != 0) {
-    MAGNET.run();  //run
-  }
+  // while (MAGNET.distanceToGo() != 0) {
+  //   MAGNET.run();  //run
+  // }
+  delay(200);                  //give the motor a chance to be in a fixed position...i heard a click and got scared
   digitalWrite(COMB_EN, LOW);  //comb on to save its place
 }
 
@@ -211,7 +334,7 @@ void pauseMotors(uint8_t pauseDuration) {
   HORIZONTAL.stop();
   MAGNET.stop();
   COMB.stop();
-  delay(pauseDuration * 1000);  // convert from seconds to milliseconds for delay function
+  delay(pauseDuration * 1000);  // convert from milliseconds to seconds for delay function
 }
 
 /**
@@ -236,7 +359,7 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint8_t agitateDuration, uint16_t t
   // Define positions
   uint16_t top = abs((totalVolume / 50.0) - (42.2) + 0.5f);  //plus initia position??? was 50 well hright -(42.2)
 
-  uint16_t agitDistance = (abs(top-42.2) * (percentDepth / 100.0));  //percentage of liquid to be displaced
+  uint16_t agitDistance = (abs(top - 42.2) * (percentDepth / 100.0));  //percentage of liquid to be displaced
   uint16_t agitSteps = distanceToStepsC(agitDistance);
   int movingDown = 1;  //should initially be true
 
@@ -258,11 +381,11 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint8_t agitateDuration, uint16_t t
   }
 
   //alternate direcitons
-  while (millis() - startTime < (agitateDuration * 1000)) {//millis() - startTime < (agitateDuration * 1000)
-    COMB.run();                      // run the motor
-    if (COMB.distanceToGo() == 0) {  //check if we hit the desired agitation depth
+  while (millis() - startTime < (agitateDuration * 1000)) {  //millis() - startTime < (agitateDuration * 1000)
+    COMB.run();                                              // run the motor
+    if (COMB.distanceToGo() == 0) {                          //check if we hit the desired agitation depth
       //COMB.moveTo(movingDown ? top : agitDistance); //changed bottom to agitDistance
-      COMB.move(movingDown *agitSteps);
+      COMB.move(movingDown * agitSteps);
       movingDown = movingDown * -1;
     }
   }
@@ -272,7 +395,7 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint8_t agitateDuration, uint16_t t
 }
 
 
-
+//set all motor axis to a set 000 position
 uint8_t home() {
   // //uart debug
   uint8_t homed = 0;
@@ -324,6 +447,9 @@ uint8_t home() {
 
   //check if we are done
   if (homingH == false && homingM == false && homingC == false) {
+    //we will now nudged the horizontal axis towards home slighlty more so the comb is more alligned
+    moveMotorH(1, 1, 3.75);  //unlcear on distance must tune. this seems to be the most i can go without snapping the rubber stopper
+    HORIZONTAL.setCurrentPosition(0);
     COMB.moveTo(-80000);  //long steps in down direction
     while (1) {
       COMB.run();                       //get stuck here          // keep moving
@@ -342,46 +468,6 @@ uint8_t home() {
   return homed;
 }
 
-void moveMotorH(int DIR, uint32_t speed, float distance) {  // 1 step is 1.8 degrees
-  // convert distance to steps. for now i'm keeping it in number of revolutions
-  uint32_t steps = distanceToStepsH(distance);
-  uint16_t stepFrequency = mapSpeedH(speed);  // adjust to control speed (Hz)
-  uint32_t stepdir = steps * DIR;
-
-  //configure motor parameters
-  HORIZONTAL.setMaxSpeed(stepFrequency);
-  HORIZONTAL.setAcceleration(30000);
-  HORIZONTAL.move(stepdir);
-  //move motor to location
-  while (1) {
-    //run motor
-    HORIZONTAL.run();
-
-    //Serial.println("I'm in the loop");
-    if (HORIZONTAL.distanceToGo() == 0) {
-      HORIZONTAL.stop();
-      break;
-      //Serial.println("I broke the loop");
-    }
-    delayMicroseconds(500);  // or try 100–500 µ
-  }
-}
-// angle (degrees) = (arc length / radius) * (180 / π)
-uint32_t distanceToStepsH(float distance)  // about 8.75mm
-{
-  // 200 steps = 1 revolution
-  //for returning # of steps per rotation use distance * 200
-  //30mm per 1 revolution
-  //1mm = 20/3
-
-  //return distance * 200;
-  //the number i devide 200 by is what i'm changing to get the best accuracy
-  return (uint32_t)(distance * (200.00 / 31.24) + 0.5f);
-}
-// num1 and num2 are the integer ranges of speed, num3 and num4 are the frequency ranges
-unsigned int mapSpeedH(float value) {
-  return (value - 1) * (1000 - 300) / (9 - 1) + 300;
-}
 
 
 Protocol parseProtocol(char *protocol) {
