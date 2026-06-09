@@ -53,7 +53,7 @@ struct Protocol {
   uint16_t percentVolume;       // amount of liquid to be displaced
   uint16_t speed;               //speed for motors to run at
   uint16_t duration;            // time for agitation to occur
-  uint16_t initialSurfaceTime;  // time to let liquid drip off into next well
+  uint32_t initialSurfaceTime;  // time to let liquid drip off into next well
   uint16_t stopAtSequences;     //number of sections to pause at, in a given well
   uint16_t sequencePauseTime;   // time spent at each point in the well
   uint16_t pausetime;           // amount of rest time in between agitations
@@ -63,9 +63,9 @@ struct Protocol {
 // Protocol Array
 char *protocolInstructions[] = {
   "A9101100500502",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
-  "M0101199"         // checking for drip time
-  // "A9101100500503"  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
-  // "M0601199"
+  "M0101105"         // checking for drip time
+  "A9101100500503"  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0101105"//5 seconds of drip
 
 };
 
@@ -157,27 +157,8 @@ void setup() {
     Serial.println(protocolInstructions[i]);
     // for each parsed protocol print out its information based on type
     switch (parsed.type) {
-      // call the agitation function
+      //call the agitation function
       case AGITATION:
-        // agitate for as many times as the parameter sets
-        //before you loop through the number of repeats you need to insert the combs into the wells
-        Serial.print("Speed=");
-        Serial.print(parsed.speed);
-
-        Serial.print(" Duration=");
-        Serial.print(parsed.duration);
-
-        Serial.print(" Volume=");
-        Serial.print(parsed.volume);
-
-        Serial.print(" Percent=");
-        Serial.print(parsed.percentVolume);
-
-        Serial.print(" Pause=");
-        Serial.print(parsed.pausetime);
-
-        Serial.print(" Repeats=");
-        Serial.println(parsed.repeats);
         //call agitation for every repeat we have
         for (int i = 0; i < parsed.repeats; i++) {                                            //just for now don't get pissed
           agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);  // agitate the motors
@@ -203,11 +184,12 @@ void setup() {
 }
 
 
-void moveSample(uint8_t initialSurfaceTime, uint8_t speed, uint8_t stopAtSequences, uint8_t sequencePauseTime) {
+void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
   //move from one well to the next
 
   magnetPushComb(102.0);           //push the magnets all the way down into the rack
-  pauseMotors(sequencePauseTime);  //wait to let the beads attach to combs
+  delay(100);//slight wait before pause so the time is consistanct
+  pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
   //this part needs to be tested!!!!!!!
   combPushMagnet(clearSampleDist);                    //move sample out of rack good
   moveMotorH(-1, speed, 7.5);                         //distance between wells //this number will likely be tuned a lot
@@ -382,7 +364,7 @@ void magnetPushComb(float pushDist) {
  * @param pauseDuration: pause duration in seconds
  * @retval: none
  */
-void pauseMotors(uint8_t pauseDuration) {
+void pauseMotors(uint32_t pauseDuration) {
   HORIZONTAL.stop();
   MAGNET.stop();
   COMB.stop();
@@ -398,7 +380,7 @@ void pauseMotors(uint8_t pauseDuration) {
  * @retval: 1 if finished, 0 if error
  * @author: Gregory Ziegler
  */
-uint8_t agitateMotors(uint16_t agitateSpeed, uint8_t agitateDuration, uint16_t totalVolume, uint16_t percentDepth) {
+uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t totalVolume, uint16_t percentDepth) {
   //42.2 = height of whole well
   delay(200);
   COMB.enableOutputs();
@@ -541,7 +523,7 @@ Protocol parseProtocol(char *protocol) {
     case PAUSING:
       parsed.duration = (protocol[1] - '0');  // Only duration for pausing
       break;
-    case MOVING:
+    case MOVING: // "M 010 1 1 99"
       parsed.initialSurfaceTime = ((protocol[1] - '0') * 100) + ((protocol[2] - '0') * 10) + (protocol[3] - '0');  // Initial surface time
       parsed.speed = (protocol[4] - '0');                                                                          // Speed
       parsed.stopAtSequences = (protocol[5] - '0');                                                                // Stop at sequences
