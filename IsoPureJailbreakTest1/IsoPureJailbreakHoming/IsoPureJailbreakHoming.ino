@@ -41,7 +41,7 @@ bool homingC = false;  //hom comb init
 //fuck UART
 // types of protocolInstructions
 enum ProtocolType {
-  AGITATION,  // 'B'
+  AGITATION,  // 'A'
   PAUSING,    // 'P'
   MOVING,     // 'M'
   INVALID     // For unknown protocol types
@@ -49,33 +49,24 @@ enum ProtocolType {
 //parameters of said protocols
 struct Protocol {
   ProtocolType type;
-  uint8_t volume;              //volume of liquid in a given well
-  uint8_t percentVolume;       // amount of liquid to be displaced
-  uint8_t speed;               //speed for motors to run at
-  uint8_t duration;            // time for agitation to occur
-  uint8_t initialSurfaceTime;  // time to let liquid drip off into next well
-  uint8_t stopAtSequences;     //number of sections to pause at, in a given well
-  uint8_t sequencePauseTime;   // time spent at each point in the well
-  uint8_t pausetime;           // amount of rest time in between agitations
-  uint8_t repeats;             // number of repeated agitations
+  uint16_t volume;              //volume of liquid in a given well
+  uint16_t percentVolume;       // amount of liquid to be displaced
+  uint16_t speed;               //speed for motors to run at
+  uint16_t duration;            // time for agitation to occur
+  uint16_t initialSurfaceTime;  // time to let liquid drip off into next well
+  uint16_t stopAtSequences;     //number of sections to pause at, in a given well
+  uint16_t sequencePauseTime;   // time spent at each point in the well
+  uint16_t pausetime;           // amount of rest time in between agitations
+  uint8_t repeats;              // number of repeated agitations
 };
 
 // Protocol Array
 char *protocolInstructions[] = {
-  "B1123501000602",
-  "M0601199",        // checking for drip time
-  "B9063501000101",  //this is fucking with us now
+  "A9101100500502",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0101199"         // checking for drip time
+  // "A9101100500503"  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  // "M0601199"
 
-  "B1063500950602",
-  "M0011199",
-  "B9063501000101",
-  "B1123500950602",
-  "M0611199",
-  "B9063501000101",
-  "B1063500950602",
-  "M0011199",
-  "B9063501000101",
-  "B9993501000102"  //last step
 };
 
 
@@ -88,8 +79,6 @@ unsigned int mapSpeedC(float value);
 
 
 void setup() {
-
-
   Serial.begin(9600);
 
   delay(500);
@@ -118,8 +107,6 @@ void setup() {
   MAGNET.enableOutputs();
   COMB.enableOutputs();
 
-
-
   //configure homing parameters for each motor
   HORIZONTAL.setMaxSpeed(700);
   HORIZONTAL.setAcceleration(9999);
@@ -137,56 +124,121 @@ void setup() {
   digitalWrite(HORIZONTAL_EN, LOW);
   digitalWrite(COMB_EN, LOW);
   digitalWrite(MAGNET_EN, LOW);
-
+  // home this ho
   while (1) {
     if (home() == 1) {  //should home the gantry to right above the wells
       break;
     } else {
       continue;
     }
-
     Serial.println("Homing!!\n");
   }
 
 
 
-  // //comb motor is intermittently turining on and off when the system is idle holding torque
-  agitateMotors(9, 5, 1100, 50);                      // 1100 is total volume
-  moveMotorM(-1, 6, 8);                               //push comb axis with magnet
-  magnetPushComb(102.0);                              //tuning distance
-  pauseMotors(5);                                     //wait to let the beads attach to combs
-                                                      //this part needs to be tested!!!!!!!
-  combPushMagnet(clearSampleDist);                    //move sample out of rack good
-  moveMotorH(-1, 1, 7.5);                             //distance between wells
-  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
-  homeMagnet();                                       //testing...working?????
+  // // //comb motor is intermittently turining on and off when the system is idle holding torque - fixed
+  // agitateMotors(9, 5, 1100, 50);  // 1100 is total volume 50 = 50% of total volume
+
+  // magnetPushComb(102.0);  //tuning distance
+  // pauseMotors(5);         //wait to let the beads attach to combs
+  // //                                                     //this part needs to be tested!!!!!!!
+  // combPushMagnet(clearSampleDist);                    //move sample out of rack good
+  // moveMotorH(-1, 1, 7.5);                             //distance between wells
+  // magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
+  // delay(200);                                         //slight wait
+  // homeMagnet();                                       //testing...working?????
   // moveComb(-1,1,15);//15mm down
+  // agitateMotors(9, 10, 1100, 50);
+  Serial.println("Hello World");  //hello fucking world cant work but we can move motors????????????????????? make that make sense
+  for (int i = 0; i < size; i++) {
+    Protocol parsed = parseProtocol(protocolInstructions[i]);  // Parse protocol
+    // print out list
+    Serial.print("Protocol: ");
+    Serial.println(protocolInstructions[i]);
+    // for each parsed protocol print out its information based on type
+    switch (parsed.type) {
+      // call the agitation function
+      case AGITATION:
+        // agitate for as many times as the parameter sets
+        //before you loop through the number of repeats you need to insert the combs into the wells
+        Serial.print("Speed=");
+        Serial.print(parsed.speed);
+
+        Serial.print(" Duration=");
+        Serial.print(parsed.duration);
+
+        Serial.print(" Volume=");
+        Serial.print(parsed.volume);
+
+        Serial.print(" Percent=");
+        Serial.print(parsed.percentVolume);
+
+        Serial.print(" Pause=");
+        Serial.print(parsed.pausetime);
+
+        Serial.print(" Repeats=");
+        Serial.println(parsed.repeats);
+        //call agitation for every repeat we have
+        for (int i = 0; i < parsed.repeats; i++) {                                            //just for now don't get pissed
+          agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);  // agitate the motors
+          delay(1000 * parsed.pausetime);                                                     //delay time inbetween repeats
+        }
+
+        break;
+
+      case PAUSING:
+        pauseMotors(parsed.duration);
+        break;
+
+      case MOVING:  // moving function not tested yet.
+        moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+        delay(2000);
+
+        break;
+      case INVALID:
+        Serial.println("Invalid Command");
+        break;
+    }
+  }
 }
 
 
-void homeMagnet() {
+void moveSample(uint8_t initialSurfaceTime, uint8_t speed, uint8_t stopAtSequences, uint8_t sequencePauseTime) {
+  //move from one well to the next
+
+  magnetPushComb(102.0);           //push the magnets all the way down into the rack
+  pauseMotors(sequencePauseTime);  //wait to let the beads attach to combs
+  //this part needs to be tested!!!!!!!
+  combPushMagnet(clearSampleDist);                    //move sample out of rack good
+  moveMotorH(-1, speed, 7.5);                         //distance between wells //this number will likely be tuned a lot
+  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
+  delay(200);                                         //slight wait
+  homeMagnet();                                       //testing...working????? working!!!
+}
+
+void homeMagnet() {  // working now
   //configure magnet axis
   magnetTriggered = false;  //
   MAGNET.setMaxSpeed(800);
-  MAGNET.setAcceleration(9999999);//AGRESSIVE
-  MAGNET.moveTo(9999999);  //posotive home direction
-  MAGNET.enableOutputs();//idk
-  //home agitation motor
+  MAGNET.setAcceleration(9999999);  //AGRESSIVE
+  MAGNET.moveTo(9999999);           //posotive home direction
+  MAGNET.enableOutputs();           //idk pmo lowk
+  //home Magnet motor
   while (1) {
-    //run the A motor
+    //run the M motor
     if (digitalRead(M_ready) == 0) {
-      horizontalTriggered = true;//var for keeping track of magnet
+      magnetTriggered = true;  //var for keeping track of magnet
     }
-    MAGNET.run();//MOVE THE FUKIN MOTOR
+    MAGNET.run();  //MOVE THE FUKIN MOTOR please
     //Serial.println("I'm in the loop");
-    if (horizontalTriggered == true) {  //magnet home switch triggered
+    if (magnetTriggered == true) {  //magnet home switch triggered
       MAGNET.stop();
       break;
       //Serial.println("I broke the loop");
     }
     delayMicroseconds(500);  // or try 100–500 µ
   }
-  MAGNET.setCurrentPosition(0);
+  MAGNET.setCurrentPosition(0);  //
 }
 //logic for moving horizontal axis exact distance
 void moveMotorH(int DIR, uint32_t speed, float distance) {  // 1 step is 1.8 degrees
@@ -468,16 +520,42 @@ uint8_t home() {
   return homed;
 }
 
-
-
+/**
+ * @brief: iterate through the array and extract all information
+ * @param char *protocol : pause duration in seconds
+ * @retval: none
+ */
 Protocol parseProtocol(char *protocol) {
+  Protocol parsed;                          // object of protocol struct with the elements of all protocolInstructions contained
+  parsed.type = getProtocolType(protocol);  //for each string we update the type
+  // for each type extract its respective information
+  switch (parsed.type) {
+    case AGITATION:                                                                                                                     //"A 9 10 1100 50 05 03"                                                                                                                // B 9 30 1000 100 20 15
+      parsed.speed = (protocol[1] - '0');                                                                                               //1 digit
+      parsed.duration = ((protocol[2] - '0') * 10) + (protocol[3] - '0');                                                               // Duration 2 digits
+      parsed.volume = ((protocol[4] - '0') * 1000) + ((protocol[5] - '0') * 100) + ((protocol[6] - '0') * 10) + ((protocol[7] - '0'));  //total volume  4 digits                             // Extract volume
+      parsed.percentVolume = ((protocol[8] - '0') * 10) + ((protocol[9] - '0'));                                                        // % of volume
+      parsed.pausetime = ((protocol[10] - '0') * 10) + ((protocol[11] - '0'));                                                          // 2 digits
+      parsed.repeats = ((protocol[12] - '0') * 10) + ((protocol[13] - '0'));                                                            //2 digits
+      break;
+    case PAUSING:
+      parsed.duration = (protocol[1] - '0');  // Only duration for pausing
+      break;
+    case MOVING:
+      parsed.initialSurfaceTime = ((protocol[1] - '0') * 100) + ((protocol[2] - '0') * 10) + (protocol[3] - '0');  // Initial surface time
+      parsed.speed = (protocol[4] - '0');                                                                          // Speed
+      parsed.stopAtSequences = (protocol[5] - '0');                                                                // Stop at sequences
+      parsed.sequencePauseTime = ((protocol[6] - '0') * 10) + (protocol[7] - '0');                                 //changed from 1 integer to 2                                                           // Sequence pause time
+      break;
+  }
+  return parsed;
 }
 
 // Function to determine protocol type
 ProtocolType getProtocolType(char *protocol) {
   // based on the first character of the protocolInstructions you can see what type of protocol it is
   switch (protocol[0]) {  // Check the first character
-    case 'B':
+    case 'A':
       return AGITATION;
       break;
     case 'P':
