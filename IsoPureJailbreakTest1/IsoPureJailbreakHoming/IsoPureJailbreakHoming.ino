@@ -20,24 +20,25 @@
 #define HORIZONTAL_EN 21
 #define COMB_EN 22
 #define MAGNET_EN 23
-
+//DO NOT CHANGE ANYTHING ABOVE THIS
 
 #define clearSampleDist 37.0
-#define clamplingOffset 22.0  //tuning this one
-
+#define clamplingOffset 22.0    //tuning this one
+#define initHorizontaldist 8.0  //init horizontal dist is different than the rest
+#define normHorizontaldist 9    //idk havn't tried yet
 // --- Create Stepper Instances ---
 AccelStepper HORIZONTAL(AccelStepper::DRIVER, HORIZONTAL_STEP, HORIZONTAL_DIR);
 AccelStepper MAGNET(AccelStepper::DRIVER, MAGNET_STEP, MAGNET_DIR);
 AccelStepper COMB(AccelStepper::DRIVER, COMB_STEP, COMB_DIR);
 
-// logic for switchs
-bool horizontalTriggered = false;
-bool magnetTriggered = false;
-bool combTriggered = false;
+// // logic for switchs
+// bool horizontalTriggered = false;
+// bool magnetTriggered = false;
+// bool combTriggered = false;
 
-bool homingH = false;  //home horizontal init
-bool homingM = true;   //home megnet init
-bool homingC = false;  //hom comb init
+// bool homingH = false;  //home horizontal init
+// bool homingM = true;   //home megnet init
+// bool homingC = false;  //hom comb init
 //fuck UART
 // types of protocolInstructions
 enum ProtocolType {
@@ -62,16 +63,28 @@ struct Protocol {
 
 // Protocol Array
 char *protocolInstructions[] = {
-  "A9101100500502",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
-  "M0101105"         // checking for drip time
-  "A9101100500503"  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
-  "M0101105"//5 seconds of drip
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        // //now in well 2 used moveinitSample
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //now in well 3 using moveSmaple with constant horizontal dist
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //now in well 4 using moveSmaple with constant horizontal dist
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //now in well 5 using moveSmaple with constant horizontal dist
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //well 6 should move to well 7 then rehome the gantry head
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //well 7 should be agitating with second comb set
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //well 8 should be still using second comb set
 
 };
 
 
 // global size of protocolInstructions
 int size = sizeof(protocolInstructions) / sizeof(protocolInstructions[0]);  // Get number of elements
+
+int wellIndex = 1;  //global counter to see which well we are in. we start in well 1
 
 uint8_t home();
 uint32_t distanceToStepsC(float distance);
@@ -133,22 +146,13 @@ void setup() {
     }
     Serial.println("Homing!!\n");
   }
+  // agitateMotors(9, 5, 1100, 50);
+  // moveInitSample(1, 1, 9, 0);
+  // agitateMotors(9, 5, 1100, 50);
+  // moveSample(1, 1, 9, 9);
+  //  passSample();//test me
+  //readyComb();
 
-
-
-  // // //comb motor is intermittently turining on and off when the system is idle holding torque - fixed
-  // agitateMotors(9, 5, 1100, 50);  // 1100 is total volume 50 = 50% of total volume
-
-  // magnetPushComb(102.0);  //tuning distance
-  // pauseMotors(5);         //wait to let the beads attach to combs
-  // //                                                     //this part needs to be tested!!!!!!!
-  // combPushMagnet(clearSampleDist);                    //move sample out of rack good
-  // moveMotorH(-1, 1, 7.5);                             //distance between wells
-  // magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
-  // delay(200);                                         //slight wait
-  // homeMagnet();                                       //testing...working?????
-  // moveComb(-1,1,15);//15mm down
-  // agitateMotors(9, 10, 1100, 50);
   Serial.println("Hello World");  //hello fucking world cant work but we can move motors????????????????????? make that make sense
   for (int i = 0; i < size; i++) {
     Protocol parsed = parseProtocol(protocolInstructions[i]);  // Parse protocol
@@ -172,7 +176,20 @@ void setup() {
         break;
 
       case MOVING:  // moving function not tested yet.
-        moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+        //will use the initial moving either at the very beggining or right after the pass
+        if (wellIndex == 1 || wellIndex == 7) {  // in the first well we have a differnt horizontal difference between wells
+          moveInitSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          wellIndex = wellIndex + 1;  // increment well count
+        } else if (wellIndex == 6) { // will pass the smaple to well 7 the rehome the gantry head
+          moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          passSample();
+          wellIndex = wellIndex + 1;  // increment well count
+        } else {
+          moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          wellIndex = wellIndex + 1;  // increment well count
+        }
+        //after we have moved into the well 7 which means well inde
+
         delay(2000);
 
         break;
@@ -184,23 +201,77 @@ void setup() {
 }
 
 
-void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
-  //move from one well to the next
+//after moveSample has been called 6 times we want to rehome the gantry head and continue with the rest of the SM
+void passSample(void) {
+  //once we are in the 7 well we need to home the motor
+  while (1) {
+    if (home() == 1) {  //should home the gantry to right above the wells
+      break;
+    } else {
+      continue;
+    }
+    Serial.println("Homing!!\n");
+  }
+}
 
-  magnetPushComb(102.0);           //push the magnets all the way down into the rack
-  delay(100);//slight wait before pause so the time is consistanct
+void readyComb() {
+  bool combTriggered = false;  //
+  COMB.setMaxSpeed(1000);
+  COMB.setAcceleration(9999999);  //AGRESSIVE
+  COMB.moveTo(9999999);           //posotive home direction
+  COMB.enableOutputs();           //idk pmo lowk
+  //home Magnet motor
+  while (1) {
+    //run the M motor
+    if (digitalRead(C_ready) == 0) {
+      combTriggered = true;  //var for keeping track of magnet
+    }
+    COMB.run();  //MOVE THE FUKIN MOTOR please
+    //Serial.println("I'm in the loop");
+    if (combTriggered == true) {  //magnet home switch triggered
+      COMB.stop();
+      break;
+      //Serial.println("I broke the loop");
+    }
+    delayMicroseconds(500);  // or try 100–500 µ
+  }
+  moveComb(1, 2, 6);           //nudge to top line to at our consistant Comb Ready height
+  COMB.setCurrentPosition(0);  //reset home pos
+}
+
+void moveInitSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
+  //move from one well to the next
+  magnetPushComb(102.0);            //push the magnets all the way down into the rack
+  delay(100);                       //slight wait before pause so the time is consistanct
   pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
   //this part needs to be tested!!!!!!!
   combPushMagnet(clearSampleDist);                    //move sample out of rack good
-  moveMotorH(-1, speed, 7.5);                         //distance between wells //this number will likely be tuned a lot
+  moveMotorH(-1, speed, initHorizontaldist);          //distance between wells //this number will likely be tuned a lot
   magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
   delay(200);                                         //slight wait
   homeMagnet();                                       //testing...working????? working!!!
+  readyComb();                                        //put the  combs above the well at the consistant spot
 }
 
-void homeMagnet() {  // working now
-  //configure magnet axis
-  magnetTriggered = false;  //
+
+
+void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
+  //move from one well to the next
+  magnetPushComb(102.0);            //push the magnets all the way down into the rack
+  delay(100);                       //slight wait before pause so the time is consistanct
+  pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
+  //this part needs to be tested!!!!!!!
+  combPushMagnet(clearSampleDist);                    //move sample out of rack good
+  moveMotorH(-1, speed, normHorizontaldist);          //distance between wells //this number will likely be tuned a lot
+  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
+  delay(200);                                         //slight wait
+  homeMagnet();                                       //testing...working????? working!!!
+  readyComb();                                        //put the  combs above the well at the consistant spot
+}
+
+void homeMagnet() {              // working now
+                                 //configure magnet axis
+  bool magnetTriggered = false;  //
   MAGNET.setMaxSpeed(800);
   MAGNET.setAcceleration(9999999);  //AGRESSIVE
   MAGNET.moveTo(9999999);           //posotive home direction
@@ -296,7 +367,7 @@ unsigned int mapSpeedM(float value) {
 
 // num1 and num2 are the integer ranges of speed, num3 and num4 are the frequency ranges
 unsigned int mapSpeedH(float value) {
-  return (value - 1) * (1000 - 300) / (9 - 1) + 300;
+  return (value - 1) * (1000 - 400) / (9 - 1) + 400;  //changed 300 to 400 6/9/26
 }
 //logic for moving comb to axact distances
 void moveComb(int DIR, uint32_t speed, float distance) {  //
@@ -432,6 +503,15 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
 //set all motor axis to a set 000 position
 uint8_t home() {
   // //uart debug
+  // logic for switchs
+  bool horizontalTriggered = false;
+  bool magnetTriggered = false;
+  bool combTriggered = false;
+
+  bool homingH = false;  //home horizontal init
+  bool homingM = true;   //home megnet init
+  bool homingC = false;  //hom comb init
+
   uint8_t homed = 0;
   //homing switches
   if (homingM == true) {
@@ -488,7 +568,7 @@ uint8_t home() {
     while (1) {
       COMB.run();                       //get stuck here          // keep moving
       if (digitalRead(C_ready) == 0) {  //comb now at the ready position
-        COMB.setCurrentPosition(0);
+        COMB.setCurrentPosition(0);     //set
         homed = 1;
         break;  //leave loop
                 //homing done
@@ -523,7 +603,7 @@ Protocol parseProtocol(char *protocol) {
     case PAUSING:
       parsed.duration = (protocol[1] - '0');  // Only duration for pausing
       break;
-    case MOVING: // "M 010 1 1 99"
+    case MOVING:                                                                                                   // "M 010 1 1 99"
       parsed.initialSurfaceTime = ((protocol[1] - '0') * 100) + ((protocol[2] - '0') * 10) + (protocol[3] - '0');  // Initial surface time
       parsed.speed = (protocol[4] - '0');                                                                          // Speed
       parsed.stopAtSequences = (protocol[5] - '0');                                                                // Stop at sequences
