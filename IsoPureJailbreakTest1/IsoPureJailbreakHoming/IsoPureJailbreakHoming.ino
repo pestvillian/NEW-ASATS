@@ -77,6 +77,14 @@ char *protocolInstructions[] = {
   "M0031105",        //well 7 should be agitating with second comb set
   "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
   "M0031105",        //well 8 should be still using second comb set
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //well 9
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //well 10
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105",        //well 11
+  "A9051100500501",  //speed 9-duration 10 - volume 1100 - % 50 - pausetime 05 repeats 03
+  "M0031105"         //well 12
 
 };
 
@@ -152,8 +160,8 @@ void setup() {
   // moveSample(1, 1, 9, 9);
   //  passSample();//test me
   //readyComb();
-
-  Serial.println("Hello World");  //hello fucking world cant work but we can move motors????????????????????? make that make sense
+  // passSample(1, 1, 0, 0);
+  // Serial.println("Hello World");  //hello fucking world cant work but we can move motors????????????????????? make that make sense
   for (int i = 0; i < size; i++) {
     Protocol parsed = parseProtocol(protocolInstructions[i]);  // Parse protocol
     // print out list
@@ -177,13 +185,13 @@ void setup() {
 
       case MOVING:  // moving function not tested yet.
         //will use the initial moving either at the very beggining or right after the pass
-        if (wellIndex == 1 || wellIndex == 7) {  // in the first well we have a differnt horizontal difference between wells
+        if (wellIndex == 1) {  // in the first well we have a differnt horizontal difference between wells
           moveInitSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
           wellIndex = wellIndex + 1;  // increment well count
-        } else if (wellIndex == 6) { // will pass the smaple to well 7 the rehome the gantry head
-          moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
-          passSample();
-          wellIndex = wellIndex + 1;  // increment well count
+        } else if (wellIndex == 6) {  // will pass the smaple to well 7 the rehome the gantry head
+          //moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          passSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);  //go into well 8 and rehome the gantry head
+          wellIndex = wellIndex + 2;                                                                              // increment well count
         } else {
           moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
           wellIndex = wellIndex + 1;  // increment well count
@@ -202,16 +210,54 @@ void setup() {
 
 
 //after moveSample has been called 6 times we want to rehome the gantry head and continue with the rest of the SM
-void passSample(void) {
-  //once we are in the 7 well we need to home the motor
-  while (1) {
-    if (home() == 1) {  //should home the gantry to right above the wells
-      break;
-    } else {
-      continue;
-    }
-    Serial.println("Homing!!\n");
+void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
+  //move from one well to the next
+  magnetPushComb(102.0);            //push the magnets all the way down into the rack
+  delay(100);                       //slight wait before pause so the time is consistanct
+  pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
+  //this part needs to be tested!!!!!!!
+  combPushMagnet(clearSampleDist);                    //move sample out of rack good
+  moveMotorH(-1, speed, (normHorizontaldist * 2));    //double the distance for this part to put it in well 8
+  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
+  delay(200);                                         //slight wait
+  homeMagnet();                                       // working!!!
+                                                      //configure for homing
+  HORIZONTAL.setMaxSpeed(700);
+  HORIZONTAL.setAcceleration(9999);
+  HORIZONTAL.moveTo(1600);  //far distance posotive home
+
+  COMB.setMaxSpeed(1000);
+  COMB.setAcceleration(999999);  //3200 steps to 1 rev
+  COMB.moveTo(100000000);        //comb home posotive distance
+  //once we are in the 8 well we need to home the motor
+  while (digitalRead(Mid) != 0) {  //checking if the midle switch is inverted
+    COMB.run();                    // keep moving
   }
+  COMB.stop();  //stop the comb
+  COMB.setCurrentPosition(0);
+
+  while (digitalRead(H_home) != 0) {
+    HORIZONTAL.run();
+  }
+  HORIZONTAL.stop();
+  HORIZONTAL.setCurrentPosition(0);
+
+  moveMotorH(1, 1, 3.75);  //unlcear on distance must tune. this seems to be the most i can go without snapping the rubber stopper
+  HORIZONTAL.setCurrentPosition(0);
+
+  moveMotorH(-1, speed, initHorizontaldist);  //distance between wells //this number will likely be tuned a lot
+  COMB.moveTo(-80000);                        //long steps in down direction
+  while (1) {
+    COMB.run();                       //get stuck here          // keep moving
+    if (digitalRead(C_ready) == 0) {  //comb now at the ready position
+      COMB.stop();
+      COMB.setCurrentPosition(0);  //set
+      break;                       //leave loop
+                                   //homing done
+    }
+  }
+  //we should now be in well 2
+  //now we need to move it to the next
 }
 
 void readyComb() {
@@ -252,8 +298,6 @@ void moveInitSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAt
   homeMagnet();                                       //testing...working????? working!!!
   readyComb();                                        //put the  combs above the well at the consistant spot
 }
-
-
 
 void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
   //move from one well to the next
@@ -401,8 +445,6 @@ uint32_t distanceToStepsC(float distance) {  // 20mm lead
 unsigned int mapSpeedC(float value) {
   return (value - 1) * (12000 - 5000) / (9 - 1) + 5000;
 }
-
-
 //logic to use the comb axis to push the magnet axis up so we can stay clamped together without losing the smaple
 void combPushMagnet(float pushDist) {  //working...just kidding
   digitalWrite(COMB_EN, LOW);          //comb on
