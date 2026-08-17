@@ -1,9 +1,9 @@
 import tkinter as tk
 from string_encoder import encode_agitation, encode_moving, encode_pausing
-from Send_UART import send_uart_text
+from Send_UART import send_uart_text, send_and_listen
 
-TERRY_PORT = "COM3"   # TODO: confirm actual port on lab desktop
-BAUD_RATE = 115200
+TERRY_PORT = "/dev/cu.usbmodem2101"   # TODO: confirm actual port on lab desktop
+BAUD_RATE = 9600
 EXPECTED_WELL_COUNT = 10  # TODO: confirm with Gamze/Greg — not fully confirmed yet
 
 root = tk.Tk()
@@ -23,8 +23,8 @@ field_defs = {
     "AGITATION": [
         ("Speed", "speed", 1, 9),
         ("Duration", "duration", 0, 99),
-        ("Volume", "volume", 0, 999),
-        ("Percent Volume", "percent_volume", 0, 100),
+        ("Volume", "volume", 0, 9999),          # 4-digit field
+        ("Percent Volume", "percent_volume", 1, 99),   # 2-digit field — see note
         ("Pause Time", "pausetime", 0, 99),
         ("Repeats", "repeats", 0, 99),
     ],
@@ -125,6 +125,21 @@ def add_step():
     result_label.config(text=f"Added to well: {protocol_string}")
     clear_fields()
     update_ui()
+    send_button.config(state="disabled")
+
+def delete_last_step():
+    global protocol_finished
+    if not current_well:
+        if full_protocol:
+            result_label.config(text="Nothing to delete in the current well — finished wells can't be edited, use Reset")
+        else:
+            result_label.config(text="Nothing to delete")
+        return
+    removed = current_well.pop()
+    protocol_finished = False
+    send_button.config(state="disabled")
+    result_label.config(text=f"Removed: {removed}")
+    update_ui()
 
 def finish_well():
     global well_count
@@ -146,6 +161,23 @@ def finish_well():
     result_label.config(text=f"Well {well_count} finished with moving step: {moving_string}")
     clear_fields()
     update_ui()
+    send_button.config(state="disabled")
+
+def finish_last_well():
+    global well_count
+    if not current_well:
+        result_label.config(text="Add at least one step before finishing the protocol")
+        return
+    if step_type.get() == "MOVING":
+        result_label.config(text="The last well doesn't take a moving step — there's nowhere to move to")
+        return
+    full_protocol.extend(current_well)
+    current_well.clear()
+    well_count += 1
+    result_label.config(text=f"Well {well_count} finished — protocol complete, Send is now enabled")
+    clear_fields()
+    update_ui()
+    send_button.config(state="normal")
 
 def send_protocol():
     if current_well:
@@ -156,9 +188,9 @@ def send_protocol():
         return
     if well_count != EXPECTED_WELL_COUNT:
         result_label.config(text=f"Warning: {well_count} wells built, expected {EXPECTED_WELL_COUNT} — sending anyway")
-    full_text = "\r\n".join(full_protocol)
+    full_text = "\r\n".join(full_protocol) + "\r\nEND"
     print("Sending full protocol:\n" + full_text)
-    send_uart_text(TERRY_PORT, BAUD_RATE, full_text)
+    send_and_listen(TERRY_PORT, BAUD_RATE, full_text, listen_seconds=300)
 
 def reset_protocol():
     global well_count
@@ -171,13 +203,26 @@ def reset_protocol():
     preview_text.config(state="normal")
     preview_text.delete("1.0", tk.END)
     preview_text.config(state="disabled")
+    send_button.config(state="disabled")
 
 btn_frame = tk.Frame(root)
 btn_frame.grid(row=7, column=0, columnspan=3, pady=10)
 tk.Button(btn_frame, text="Add Step", command=add_step).pack(side="left", padx=5)
+tk.Button(btn_frame, text="Delete Last Step", command=delete_last_step).pack(side="left", padx=5)
 tk.Button(btn_frame, text="Finish Well", command=finish_well).pack(side="left", padx=5)
-tk.Button(btn_frame, text="Send Protocol", command=send_protocol).pack(side="left", padx=5)
+tk.Button(btn_frame, text="Finish Last Well", command=finish_last_well).pack(side="left", padx=5)
+
+send_button = tk.Button(
+    btn_frame,
+    text="Send Protocol",
+    command=send_protocol,
+    state="disabled",
+    disabledforeground="#777777",
+)
+send_button.pack(side="left", padx=5)
+
 tk.Button(btn_frame, text="Reset Protocol", command=lambda: reset_protocol()).pack(side="left", padx=5)
+
 
 result_label = tk.Label(root, text="")
 result_label.grid(row=8, column=0, columnspan=3)
