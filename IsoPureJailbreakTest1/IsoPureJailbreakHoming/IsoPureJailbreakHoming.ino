@@ -98,6 +98,10 @@ int size = sizeof(protocolInstructions) / sizeof(protocolInstructions[0]);  // G
 
 int wellIndex = 1;  //global counter to see which well we are in. we start in well 1
 
+#define MAX_STEPS 64
+String stepBuffer[MAX_STEPS];
+int stepCount = 0;
+
 uint8_t home();
 uint32_t distanceToStepsC(float distance);
 unsigned int mapSpeedC(float value);
@@ -159,50 +163,50 @@ void setup() {
     Serial.println("Homing!!\n");
   }
  //hello fucking world cant work but we can move motors????????????????????? make that make sense
-  for (int i = 0; i < size; i++) {
-    Protocol parsed = parseProtocol(protocolInstructions[i]);  // Parse protocol
-    // print out list
-    Serial.print("Protocol: ");
-    Serial.println(protocolInstructions[i]);
-    // for each parsed protocol print out its information based on type
-    switch (parsed.type) {
-      //call the agitation function
-      case AGITATION:
-        //call agitation for every repeat we have
-        for (int i = 0; i < parsed.repeats; i++) {                                            //just for now don't get pissed
-          agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);  // agitate the motors
-          delay(1000 * parsed.pausetime);                                                     //delay time inbetween repeats
-        }
+  // for (int i = 0; i < size; i++) {
+  //   Protocol parsed = parseProtocol(protocolInstructions[i]);  // Parse protocol
+  //   // print out list
+  //   Serial.print("Protocol: ");
+  //   Serial.println(protocolInstructions[i]);
+  //   // for each parsed protocol print out its information based on type
+  //   switch (parsed.type) {
+  //     //call the agitation function
+  //     case AGITATION:
+  //       //call agitation for every repeat we have
+  //       for (int i = 0; i < parsed.repeats; i++) {                                            //just for now don't get pissed
+  //         agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);  // agitate the motors
+  //         delay(1000 * parsed.pausetime);                                                     //delay time inbetween repeats
+  //       }
 
-        break;
+  //       break;
 
-      case PAUSING:
-        pauseMotors(parsed.duration);
-        break;
+  //     case PAUSING:
+  //       pauseMotors(parsed.duration);
+  //       break;
 
-      case MOVING:  // moving function not tested yet.
-        //will use the initial moving either at the very beggining or right after the pass
-        if (wellIndex == 1) {  // in the first well we have a differnt horizontal difference between wells
-          moveInitSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
-          wellIndex = wellIndex + 1;  // increment well count
-        } else if (wellIndex == 6) {  // will pass the smaple to well 7 the rehome the gantry head
-          //moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
-          passSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);  //go into well 8 and rehome the gantry head
-          wellIndex = wellIndex + 2;                                                                              // increment well count
-        } else {
-          moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
-          wellIndex = wellIndex + 1;  // increment well count
-        }
-        //after we have moved into the well 7 which means well inde
+  //     case MOVING:  // moving function not tested yet.
+  //       //will use the initial moving either at the very beggining or right after the pass
+  //       if (wellIndex == 1) {  // in the first well we have a differnt horizontal difference between wells
+  //         moveInitSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+  //         wellIndex = wellIndex + 1;  // increment well count
+  //       } else if (wellIndex == 6) {  // will pass the smaple to well 7 the rehome the gantry head
+  //         //moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+  //         passSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);  //go into well 8 and rehome the gantry head
+  //         wellIndex = wellIndex + 2;                                                                              // increment well count
+  //       } else {
+  //         moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+  //         wellIndex = wellIndex + 1;  // increment well count
+  //       }
+  //       //after we have moved into the well 7 which means well inde
 
-        delay(2000);
+  //       delay(2000);
 
-        break;
-      case INVALID:
-        Serial.println("Invalid Command");
-        break;
-    }
-  }
+  //       break;
+  //     case INVALID:
+  //       Serial.println("Invalid Command");
+  //       break;
+  //   }
+  // }
 }
 
 
@@ -681,6 +685,146 @@ ProtocolType getProtocolType(char *protocol) {
   }
 }
 
-// main loop
+bool verifyBuffer() {
+  bool allValid = true;
+
+  for (int i = 0; i < stepCount; i++) {
+    char buf[32];
+    stepBuffer[i].toCharArray(buf, sizeof(buf));
+    Protocol parsed = parseProtocol(buf);
+
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.print(stepBuffer[i]);
+    Serial.print("  ->  ");
+
+    switch (parsed.type) {
+      case AGITATION:
+        Serial.print("AGITATION speed="); Serial.print(parsed.speed);
+        Serial.print(" duration="); Serial.print(parsed.duration);
+        Serial.print(" volume="); Serial.print(parsed.volume);
+        Serial.print(" percent="); Serial.print(parsed.percentVolume);
+        Serial.print(" pause="); Serial.print(parsed.pausetime);
+        Serial.print(" repeats="); Serial.println(parsed.repeats);
+        break;
+      case MOVING:
+        Serial.print("MOVING surfaceTime="); Serial.print(parsed.initialSurfaceTime);
+        Serial.print(" speed="); Serial.print(parsed.speed);
+        Serial.print(" stopAt="); Serial.print(parsed.stopAtSequences);
+        Serial.print(" seqPause="); Serial.println(parsed.sequencePauseTime);
+        break;
+      case PAUSING:
+        Serial.print("PAUSING duration="); Serial.println(parsed.duration);
+        break;
+      case INVALID:
+        Serial.println("INVALID");
+        allValid = false;
+        break;
+    }
+  }
+  return allValid;
+}
+
+void runProtocol(bool dryRun) {
+  wellIndex = 1;   // reset for each run
+
+  for (int i = 0; i < stepCount; i++) {
+    char buf[32];
+    stepBuffer[i].toCharArray(buf, sizeof(buf));
+    Protocol parsed = parseProtocol(buf);
+
+    Serial.print("step ");
+    Serial.print(i + 1);
+    Serial.print(" (well ");
+    Serial.print(wellIndex);
+    Serial.print("): ");
+
+    switch (parsed.type) {
+      case AGITATION:
+        Serial.print("agitateMotors(");
+        Serial.print(parsed.speed); Serial.print(", ");
+        Serial.print(parsed.duration); Serial.print(", ");
+        Serial.print(parsed.volume); Serial.print(", ");
+        Serial.print(parsed.percentVolume); Serial.print(") x");
+        Serial.print(parsed.repeats);
+        Serial.print(", pause "); Serial.print(parsed.pausetime); Serial.println("s between");
+        if (!dryRun) {
+          for (int r = 0; r < parsed.repeats; r++) {
+            agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);
+            delay(1000 * parsed.pausetime);
+          }
+        }
+        break;
+
+      case PAUSING:
+        Serial.print("pauseMotors("); Serial.print(parsed.duration); Serial.println(")");
+        if (!dryRun) pauseMotors(parsed.duration);
+        break;
+
+      case MOVING:
+        if (wellIndex == 1) {
+          Serial.println("moveInitSample(...)");
+          if (!dryRun) moveInitSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          wellIndex += 1;
+        } else if (wellIndex == 6) {
+          Serial.println("passSample(...)  [handoff to second magnet]");
+          if (!dryRun) passSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          wellIndex += 2;
+        } else {
+          Serial.println("moveSample(...)");
+          if (!dryRun) moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          wellIndex += 1;
+        }
+        if (!dryRun) delay(2000);
+        break;
+
+      case INVALID:
+        Serial.println("INVALID - skipped");
+        break;
+    }
+
+  }
+
+  if (!dryRun) readyComb();
+
+  Serial.print("--- protocol finished, ended at well ");
+
+  Serial.print(wellIndex);
+  Serial.println(" ---");
+}
+
 void loop() {
+  if (Serial.available() > 0) {
+    String receivedString = Serial.readStringUntil('\n');
+    receivedString.trim();
+    if (receivedString.length() == 0) return;
+
+    if (receivedString == "END") {
+      Serial.print("--- received ");
+      Serial.print(stepCount);
+      Serial.println(" steps ---");
+
+      if (verifyBuffer()) {
+        Serial.println("--- all steps valid, RUNNING: ---");
+        runProtocol(false);
+      } else {
+        Serial.println("--- INVALID STEPS FOUND, protocol not safe to run ---");
+      }
+
+      stepCount = 0;
+      return;
+    }
+
+    if (stepCount >= MAX_STEPS) {
+      Serial.println("ERROR: buffer full, step dropped");
+      return;
+    }
+
+    stepBuffer[stepCount] = receivedString;
+    stepCount++;
+    Serial.print("buffered [");
+    Serial.print(stepCount);
+    Serial.print("] ");
+    Serial.println(receivedString);
+  }
 }
