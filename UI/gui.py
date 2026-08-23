@@ -109,9 +109,8 @@ def encode_current():
 
 
 # --- Protocol-building state ---
-current_well = []          # steps added to the well currently being built
-full_protocol = []         # all completed wells' steps, in final send order
-well_count = 0
+wells = []                 # list of well dicts: {"steps": [...], "moving_step": str or None}
+current_well_steps = []    # steps for the well currently being built
 protocol_finished = False  # True only after Finish Last Well, or loading a finished protocol
 
 
@@ -125,15 +124,25 @@ def label_step(s):
     return s
 
 def update_ui():
-    current_well_number = well_count + 1
+    total_steps = sum(len(w["steps"]) + (1 if w["moving_step"] else 0) for w in wells)
+    current_well_number = len(wells) + 1
     status_label.config(
-        text=f"Well {current_well_number} of {EXPECTED_WELL_COUNT} | Steps in current well: {len(current_well)} | Total steps: {len(full_protocol)}"
+        text=f"Well {current_well_number} of {EXPECTED_WELL_COUNT} | Steps in current well: {len(current_well_steps)} | Total steps: {total_steps}"
     )
     preview_text.config(state="normal")
     preview_text.delete("1.0", tk.END)
-    preview = full_protocol + (["--- current well ---"] + current_well if current_well else [])
-    preview = [label_step(s) if s != "--- current well ---" else s for s in preview]
-    preview_text.insert("1.0", "\n".join(preview))
+
+    lines = []
+    for i, w in enumerate(wells):
+        lines.append(f"--- well {i+1} ---")
+        lines.extend(label_step(s) for s in w["steps"])
+        if w["moving_step"]:
+            lines.append(label_step(w["moving_step"]))
+    if current_well_steps:
+        lines.append("--- current well ---")
+        lines.extend(label_step(s) for s in current_well_steps)
+
+    preview_text.insert("1.0", "\n".join(lines))
     preview_text.config(state="disabled")
 
 
@@ -148,7 +157,7 @@ def add_step():
     except ValueError as e:
         result_label.config(text=str(e))
         return
-    current_well.append(protocol_string)
+    current_well_steps.append(protocol_string)
     protocol_finished = False
     result_label.config(text=f"Added to well: {protocol_string}")
     clear_fields()
@@ -158,13 +167,13 @@ def add_step():
 
 def delete_last_step():
     global protocol_finished
-    if not current_well:
-        if full_protocol:
-            result_label.config(text="Nothing to delete in the current well — finished wells can't be edited, use Reset")
+    if not current_well_steps:
+        if wells:
+            result_label.config(text="Nothing to delete in the current well — click a well below to edit a finished one")
         else:
             result_label.config(text="Nothing to delete")
         return
-    removed = current_well.pop()
+    removed = current_well_steps.pop()
     protocol_finished = False
     result_label.config(text=f"Removed: {removed}")
     update_ui()
@@ -172,11 +181,11 @@ def delete_last_step():
 
 
 def finish_well():
-    global well_count, protocol_finished
+    global protocol_finished
     if step_type.get() != "MOVING":
         result_label.config(text="Select 'Moving' and fill in the transition fields to finish this well")
         return
-    if not current_well:
+    if not current_well_steps:
         result_label.config(text="Add at least one step before finishing the well")
         return
     try:
@@ -184,30 +193,27 @@ def finish_well():
     except ValueError as e:
         result_label.config(text=str(e))
         return
-    full_protocol.extend(current_well)
-    full_protocol.append(moving_string)
-    current_well.clear()
-    well_count += 1
+    wells.append({"steps": list(current_well_steps), "moving_step": moving_string})
+    current_well_steps.clear()
     protocol_finished = False
-    result_label.config(text=f"Well {well_count} finished with moving step: {moving_string}")
+    result_label.config(text=f"Well {len(wells)} finished with moving step: {moving_string}")
     clear_fields()
     update_ui()
     send_button.config(state="disabled")
 
 
 def finish_last_well():
-    global well_count, protocol_finished
-    if not current_well:
+    global protocol_finished
+    if not current_well_steps:
         result_label.config(text="Add at least one step before finishing the protocol")
         return
     if step_type.get() == "MOVING":
         result_label.config(text="The last well doesn't take a moving step — there's nowhere to move to")
         return
-    full_protocol.extend(current_well)
-    current_well.clear()
-    well_count += 1
+    wells.append({"steps": list(current_well_steps), "moving_step": None})
+    current_well_steps.clear()
     protocol_finished = True
-    result_label.config(text=f"Well {well_count} finished — protocol complete, Send is now enabled")
+    result_label.config(text=f"Well {len(wells)} finished — protocol complete, Send is now enabled")
     clear_fields()
     update_ui()
     send_button.config(state="normal")
@@ -216,7 +222,7 @@ def estimate_total_seconds(steps):
     """Rough estimate of run duration from encoded steps. Undercounts homing,
     motion, and clamping overhead — treat as a floor, not exact."""
     total = 0
-    for s in steps:
+    for s in steps: 
         if s.startswith("A"):
             duration = int(s[2:4])
             pausetime = int(s[10:12])
@@ -232,18 +238,25 @@ def estimate_total_seconds(steps):
 
 
 def send_protocol():
-    if current_well:
+    if current_well_steps:
         result_label.config(text="Finish the current well before sending")
         return
-    if not full_protocol:
+    if not wells:
         result_label.config(text="Nothing to send yet")
         return
-    if well_count != EXPECTED_WELL_COUNT:
-        result_label.config(text=f"Warning: {well_count} wells built, expected {EXPECTED_WELL_COUNT} — sending anyway")
-    full_text = "\r\n".join(full_protocol) + "\r\nEND"
+    if len(wells) != EXPECTED_WELL_COUNT:
+        result_label.config(text=f"Warning: {len(wells)} wells built, expected {EXPECTED_WELL_COUNT} — sending anyway")
+
+    flat_steps = []
+    for w in wells:
+        flat_steps.extend(w["steps"])
+        if w["moving_step"]:
+            flat_steps.append(w["moving_step"])
+
+    full_text = "\r\n".join(flat_steps) + "\r\nEND"
     print("Sending full protocol:\n" + full_text)
 
-    total_seconds = estimate_total_seconds(full_protocol)
+    total_seconds = estimate_total_seconds(flat_steps)
     listen_seconds = max(60, total_seconds + 60)  # buffer so listening doesn't cut off a long run early
 
     start_time = time.time()
@@ -273,10 +286,9 @@ def send_protocol():
 
 
 def reset_protocol():
-    global well_count, protocol_finished
-    current_well.clear()
-    full_protocol.clear()
-    well_count = 0
+    global protocol_finished
+    current_well_steps.clear()
+    wells.clear()
     protocol_finished = False
     clear_fields()
     result_label.config(text="Protocol reset")
@@ -294,7 +306,7 @@ def save_protocol():
     if not name:
         result_label.config(text="Enter a name to save under")
         return
-    if not full_protocol:
+    if not wells:
         result_label.config(text="Nothing to save yet")
         return
 
@@ -308,14 +320,14 @@ def save_protocol():
 
     data = {
         "name": name,
-        "steps": full_protocol,
-        "well_count": well_count,
+        "wells": wells,
         "finished": protocol_finished,
     }
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
-    result_label.config(text=f"Saved as '{name}' ({len(full_protocol)} steps)")
+    total_steps = sum(len(w["steps"]) + (1 if w["moving_step"] else 0) for w in wells)
+    result_label.config(text=f"Saved as '{name}' ({total_steps} steps)")
     refresh_protocol_list()
     name_entry.delete(0, tk.END)
 
@@ -343,14 +355,14 @@ def refresh_protocol_list():
 
 
 def load_protocol():
-    global well_count, protocol_finished
+    global protocol_finished
     name = selected_protocol.get()
     path = os.path.join(PROTOCOL_DIR, name + ".json")
     if not os.path.exists(path):
         result_label.config(text=f"No saved protocol named '{name}'")
         return
 
-    if full_protocol or current_well:
+    if wells or current_well_steps:
         if not messagebox.askyesno("Discard current?", "Loading will discard the protocol you're building. Continue?"):
             result_label.config(text="Load cancelled")
             return
@@ -358,10 +370,9 @@ def load_protocol():
     with open(path) as f:
         data = json.load(f)
 
-    current_well.clear()
-    full_protocol.clear()
-    full_protocol.extend(data["steps"])
-    well_count = data.get("well_count", 0)
+    current_well_steps.clear()
+    wells.clear()
+    wells.extend(data["wells"])
     protocol_finished = data.get("finished", False)
 
     name_entry.delete(0, tk.END)
@@ -370,8 +381,9 @@ def load_protocol():
     clear_fields()
     update_ui()
     send_button.config(state="normal" if protocol_finished else "disabled")
+    total_steps = sum(len(w["steps"]) + (1 if w["moving_step"] else 0) for w in wells)
     state_note = "ready to send" if protocol_finished else "not finished — press Finish Last Well"
-    result_label.config(text=f"Loaded '{name}' — {len(full_protocol)} steps, {state_note}")
+    result_label.config(text=f"Loaded '{name}' — {total_steps} steps, {state_note}")
 
 
 def delete_saved_protocol():
