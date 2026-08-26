@@ -82,6 +82,8 @@ def describe_step(step):
         return (f"Agitation — speed {v['speed']}, {v['duration']}s, {v['volume']}mL, "
                 f"{v['percent_volume']}%, pause {v['pausetime']}s, x{v['repeats']}")
     elif t == "MOVING":
+        if v.get("stop_at_sequences") == 1:
+            return "Skip — relocate only, no bead collection"
         return f"Moving out — bead attach {v['initial_surface_time']}s, speed {v['speed']}"
     else:
         return f"Pausing — {v['duration']}s"
@@ -91,6 +93,9 @@ def label_step(encoded):
     if encoded.startswith("A"):
         return f"[Agitation] {encoded}"
     elif encoded.startswith("M"):
+        # stop_at_sequences digit sits at a fixed position in the encoded string
+        if len(encoded) >= 6 and encoded[5] == "1":
+            return f"[Skip]      {encoded}"
         return f"[Moving]    {encoded}"
     elif encoded.startswith("P"):
         return f"[Pausing]   {encoded}"
@@ -143,6 +148,7 @@ tk.Button(editor_btn_frame, text="Add Step", command=lambda: add_step()).pack(si
 tk.Button(editor_btn_frame, text="Delete Last Step", command=lambda: delete_last_step()).pack(side="left", padx=5)
 tk.Button(editor_btn_frame, text="Cancel Edit", command=lambda: cancel_edit()).pack(side="left", padx=5)
 tk.Button(editor_btn_frame, text="Finish Well", command=lambda: finish_well()).pack(side="left", padx=5)
+tk.Button(editor_btn_frame, text="Skip Well", command=lambda: skip_well()).pack(side="left", padx=5)
 tk.Button(editor_btn_frame, text="Set As Last Well", command=lambda: finish_last_well()).pack(side="left", padx=5)
 
 
@@ -243,6 +249,38 @@ send_button = tk.Button(action_row, text="Send Protocol", command=lambda: send_p
                         state="disabled", disabledforeground="#777777")
 send_button.pack(side="left", padx=5)
 tk.Button(action_row, text="Reset Protocol", command=lambda: reset_protocol()).pack(side="left", padx=5)
+
+def stop_protocol():
+    if not send_in_progress:
+        result_label_set("Nothing is running to stop")
+        return
+    from Send_UART import send_stop_command
+    if send_stop_command():
+        result_label_set("Stop sent")
+    else:
+        result_label_set("No active protocol to stop")
+
+tk.Button(action_row, text="Stop", command=lambda: stop_protocol(), fg="red").pack(side="left", padx=5)
+tk.Button(action_row, text="Pause", command=lambda: pause_protocol(), fg="orange").pack(side="left", padx=5)
+tk.Button(action_row, text="Resume", command=lambda: resume_protocol(), fg="green").pack(side="left", padx=5)
+
+def pause_protocol():
+    if not send_in_progress:
+        result_label_set("Nothing is running to pause")
+        return
+    from Send_UART import send_pause_command
+    if send_pause_command():
+        result_label_set("Pause sent")
+    else:
+        result_label_set("No active protocol to pause")
+
+
+def resume_protocol():
+    from Send_UART import send_resume_command
+    if send_resume_command():
+        result_label_set("Resume sent")
+    else:
+        result_label_set("No active protocol to resume")
 
 
 # ============================================================
@@ -407,6 +445,30 @@ def finish_well():
     clear_fields()
     update_ui()
 
+def skip_well():
+    global last_well_num
+    if active_well is None:
+        return
+    d = wells_data[active_well]
+    if d["steps"]:
+        if not messagebox.askyesno("Discard steps?", f"Well {active_well} has {len(d['steps'])} step(s). Skip anyway and discard them?"):
+            return
+    d["steps"] = []
+    d["moving_step"] = {
+        "type": "MOVING",
+        "values": {
+            "initial_surface_time": 0,
+            "speed": 1,
+            "stop_at_sequences": 1,
+            "sequence_pause_time": 0,
+        }
+    }
+    if active_well == last_well_num:
+        last_well_num = None
+    result_label_set(f"Well {active_well} set to skip")
+    clear_fields()
+    update_ui()
+
 
 def finish_last_well():
     global last_well_num
@@ -541,11 +603,16 @@ def estimate_total_seconds(steps):
     return total
 
 
+send_in_progress = False
+
 def send_protocol():
+    global send_in_progress
+    if send_in_progress:
+        result_label_set("A protocol is already running — wait for it to finish or Stop it first")
+        return
     if not is_protocol_valid():
         result_label_set(validation_message())
         return
-
     flat_steps, _ = build_flat_steps()
     if not flat_steps:
         result_label_set("Nothing to send yet")
@@ -557,6 +624,8 @@ def send_protocol():
     total_seconds = estimate_total_seconds(flat_steps)
     listen_seconds = max(60, total_seconds + 60)
 
+    send_in_progress = True
+    send_button.config(state="disabled")
     start_time = time.time()
     running = {"active": True}
 
@@ -569,7 +638,7 @@ def send_protocol():
                 root.after(1000, tick)
 
     def worker():
-        time.sleep(5) # test timer
+        global send_in_progress
         try:
             send_and_listen(TERRY_PORT, BAUD_RATE, full_text, listen_seconds=listen_seconds)
             result_label_set("Protocol sent and completed")
@@ -579,6 +648,8 @@ def send_protocol():
         finally:
             running["active"] = False
             timer_label.config(text="")
+            send_in_progress = False
+            send_button.config(state="normal" if is_protocol_valid() else "disabled")
 
     tick()
     threading.Thread(target=worker, daemon=True).start()

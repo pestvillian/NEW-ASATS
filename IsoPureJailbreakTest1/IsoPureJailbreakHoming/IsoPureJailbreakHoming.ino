@@ -29,6 +29,12 @@
 
 #define horzontalSpeed 1
 
+//working on stop and pause
+
+#define stopLiftDist 8.0  // PLACEHOLDER — mm to lift comb clear on Stop so wells are reachable, can also be considered "move out the way"
+
+#define skipClearDist 8.0  // PLACEHOLDER — mm to lift comb clear before a skip move; tune on hardware
+
 
 
 
@@ -105,6 +111,91 @@ int stepCount = 0;
 uint8_t home();
 uint32_t distanceToStepsC(float distance);
 unsigned int mapSpeedC(float value);
+
+//--------
+bool stopRequested = false;
+bool pauseRequested = false;
+bool isPaused = false;
+uint32_t agitateRemainingMs = 0;  // how much of the current agitation is left, if paused mid-way
+
+bool pauseAllowedHere = false;  // only true while inside agitateMotors's timed loop
+
+bool checkForStop() {
+  if (Serial.available() > 0) {
+    String s = Serial.readStringUntil('\n');
+    s.trim();
+    if (s == "STOP") {
+      stopRequested = true;
+      return true;
+    }
+    if (s == "PAUSE") {
+      pauseRequested = true;
+      return true;
+    }
+  }
+  return false;
+}
+
+void stopProtocol() {
+  Serial.println("--- STOP received, lifting and re-homing ---");
+  moveComb(1, 2, stopLiftDist);  // small immediate lift, clear of the rack
+
+  // re-issue homing targets — home() only calls .run(), it needs a pending
+  // target to move toward, or it silently does nothing (this is exactly
+  // what broke home-at-start earlier)
+  HORIZONTAL.setMaxSpeed(700);
+  HORIZONTAL.setAcceleration(9999);
+  HORIZONTAL.moveTo(HORIZONTAL.currentPosition() + 1600);
+
+  MAGNET.setMaxSpeed(800);
+  MAGNET.setAcceleration(999999);
+  MAGNET.moveTo(MAGNET.currentPosition() + 100000);
+
+  COMB.setMaxSpeed(1000);
+  COMB.setAcceleration(999999);
+  COMB.moveTo(COMB.currentPosition() + 100000000);
+
+  while (1) {
+    if (home() == 1) break;
+  }
+  Serial.println("--- stopped and homed, ready for new protocol ---");
+}
+
+void waitForResume() {
+  isPaused = true;
+  Serial.println("--- PAUSED ---");
+  while (isPaused) {
+    if (Serial.available() > 0) {
+      String s = Serial.readStringUntil('\n');
+      s.trim();
+      if (s == "RESUME") {
+        isPaused = false;
+        pauseRequested = false;
+        Serial.println("--- RESUMING ---");
+      }
+      if (s == "STOP") {
+        isPaused = false;
+        pauseRequested = false;
+        stopRequested = true;
+        Serial.println("--- STOP received while paused ---");
+      }
+    }
+  }
+}
+
+void pauseMotors(uint32_t pauseDuration) {
+  HORIZONTAL.stop();
+  MAGNET.stop();
+  COMB.stop();
+    for (uint32_t s = 0; s < pauseDuration; s++) {
+      delay(1000);
+      checkForStop();
+      if (stopRequested) return;
+      if (pauseRequested && pauseAllowedHere) { waitForResume(); if (stopRequested) return; }
+    }
+}
+
+//--------
 
 
 void setup() {
@@ -216,13 +307,17 @@ void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   magnetPushComb(102.0);            //push the magnets all the way down into the rack
   delay(100);                       //slight wait before pause so the time is consistanct
   pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
+  if (stopRequested) return;
+
   //this part needs to be tested!!!!!!!
   combPushMagnet(clearSampleDist);                    //move sample out of rack good
   //DO NOT INCREASE THIS. AT THIS POINT WE ARE AT THE END OF THE BELT!!!!! DO NOT INCREASE!!!!!!!!!
   moveMotorH(-1, horzontalSpeed, ((normHorizontaldist * 2)) + 0.5f);    //double the distance for this part to put it in well 8
+  if (stopRequested) return;
   magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
   delay(200);                                         //slight wait // 0.5f is for floating point accuracy or some shit
   homeMagnet();                                       // working!!!
+  if (stopRequested) return;
                                                       //configure for homing
   HORIZONTAL.setMaxSpeed(700);
   HORIZONTAL.setAcceleration(9999);
@@ -234,23 +329,36 @@ void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   //once we are in the 8 well we need to home the motor
   while (digitalRead(Mid) != 0) {  //checking if the midle switch is inverted
     COMB.run();                    // keep moving
+    checkForStop();
+    if (stopRequested) { COMB.stop(); return; }
+    if (pauseRequested && pauseAllowedHere) { COMB.stop(); waitForResume(); if (stopRequested) return; }
   }
   COMB.stop();  //stop the comb
   COMB.setCurrentPosition(0);
 
   while (digitalRead(H_home) != 0) {
     HORIZONTAL.run();
+    checkForStop();
+    if (stopRequested) { HORIZONTAL.stop(); return; }
+    if (pauseRequested) { HORIZONTAL.stop(); waitForResume(); if (stopRequested) return; }
+ 
   }
   HORIZONTAL.stop();
   HORIZONTAL.setCurrentPosition(0);
 
   moveMotorH(1, 1, 3.75);  //unlcear on distance must tune. this seems to be the most i can go without snapping the rubber stopper
+  if (stopRequested) return;
   HORIZONTAL.setCurrentPosition(0);
 
   moveMotorH(-1, horzontalSpeed, initHorizontaldist);  //distance between wells //this number will likely be tuned a lot
+  if (stopRequested) return;
+
   COMB.moveTo(-80000);                        //long steps in down direction
   while (1) {
     COMB.run();                       //get stuck here          // keep moving
+    checkForStop();
+    if (stopRequested) { COMB.stop(); return; }
+    if (pauseRequested) { COMB.stop(); waitForResume(); if (stopRequested) return; }
     if (digitalRead(C_ready) == 0) {  //comb now at the ready position
       COMB.stop();
       COMB.setCurrentPosition(0);  //set
@@ -275,6 +383,10 @@ void readyComb() {
       combTriggered = true;  //var for keeping track of magnet
     }
     COMB.run();  //MOVE THE FUKIN MOTOR please
+    checkForStop();
+    if (stopRequested) { COMB.stop(); return; }
+    if (pauseRequested && pauseAllowedHere) { COMB.stop(); waitForResume(); if (stopRequested) return; }
+ 
     //Serial.println("I'm in the loop");
     if (combTriggered == true) {  //magnet home switch triggered
       COMB.stop();
@@ -288,38 +400,76 @@ void readyComb() {
 }
 
 void moveInitSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
-  //move from one well to the next
-  //clustering!!!
-  magnetPushComb(102.0);            //push the magnets all the way down into the rack
-  homeMagnet();
-  magnetPushComb(102.0);
-  delay(100);                       //slight wait before pause so the time is consistanct
-  pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
-  //this part needs to be tested!!!!!!!
-  combPushMagnet(clearSampleDist);                    //move sample out of rack good
-  moveMotorH(-1, speed, initHorizontaldist);          //distance between wells //this number will likely be tuned a lot
-  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
-  delay(200);                                         //slight wait
-  homeMagnet();                                       //testing...working????? working!!!
-  readyComb();                                        //put the  combs above the well at the consistant spot
+    if (stopAtSequences == 1) {
+      moveComb(1, 2, skipClearDist);   // lift comb clear of the rack wall
+      if (stopRequested) return;
+      moveMotorH(-1, speed, initHorizontaldist); // could be source of error?
+      if (stopRequested) return;
+      moveComb(-1, 2, skipClearDist);  // lower back down to ready height
+      return;
+    }
+
+    pauseAllowedHere = false;  // clamp-critical zone starting
+    magnetPushComb(102.0); //push the magnets all the way down into the rack
+    homeMagnet(); // home all the way up
+    if (stopRequested) return;
+    magnetPushComb(102.0); //this is the distance from the magnet home to the bottom of the well rack
+    if (stopRequested) return;
+    delay(100);                       //slight wait before pause so the time is consistanct
+    pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
+    if (stopRequested) return;
+    combPushMagnet(clearSampleDist);                    //move sample out of rack good
+    if (stopRequested) return;
+
+    pauseAllowedHere = true;   // horizontal transit — HORIZONTAL_EN never toggles, safe
+    moveMotorH(-1, speed, initHorizontaldist);          //distance between wells //this number will likely be tuned a lot
+    pauseAllowedHere = false;  // back into clamp-critical territory
+
+    if (stopRequested) return;
+    magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
+    if (stopRequested) return;
+    delay(200);                                         //slight wait
+    homeMagnet();                                       //testing...working????? working!!!
+    if (stopRequested) return;
+    readyComb();                                        //put the  combs above the well at the consistant spot
 }
 
 void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
-  //move from one well to the next
-  //CLUSTERING quicly insert the magnets all the way then remove them then put them back in.
-  magnetPushComb(102.0);            //push the magnets all the way down into the rack
-  homeMagnet(); // home all the way up
-  magnetPushComb(102.0); //this is the distance from the magnet home to the bottom of the well rack
+  if (stopAtSequences == 1) {
+    moveComb(1, 2, skipClearDist);   // lift comb clear of the rack wall
+    if (stopRequested) return;
+    moveMotorH(-1, speed, normHorizontaldist); //could be source of error?
+    if (stopRequested) return;
+    moveComb(-1, 2, skipClearDist);  // lower back down to ready height
+    return;
+  }
 
-  delay(100);                       //slight wait before pause so the time is consistanct
-  pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
-  //this part needs to be tested!!!!!!!
-  combPushMagnet(clearSampleDist);                    //move sample out of rack good
-  moveMotorH(-1, speed, normHorizontaldist);          //distance between wells //this number will likely be tuned a lot
-  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
-  delay(200);                                         //slight wait
-  homeMagnet();                                       //testing...working????? working!!!
-  readyComb();                                        //put the  combs above the well at the consistant spot
+  pauseAllowedHere = false;  // clamp-critical zone starting
+
+  magnetPushComb(102.0);
+  homeMagnet();
+  if (stopRequested) return;
+  magnetPushComb(102.0);
+  if (stopRequested) return;
+  delay(100);
+  pauseMotors(initialSurfaceTime);
+  if (stopRequested) return;
+  combPushMagnet(clearSampleDist);
+  if (stopRequested) return;
+
+  pauseAllowedHere = true;   // horizontal transit — HORIZONTAL_EN never toggles, safe
+
+  moveMotorH(-1, speed, normHorizontaldist); //yes
+
+  pauseAllowedHere = false;  // back into clamp-critical territory
+
+  if (stopRequested) return;
+  magnetPushComb(clearSampleDist + clamplingOffset);
+  if (stopRequested) return;
+  delay(200);
+  homeMagnet();
+  if (stopRequested) return;
+  readyComb();
 }
 
 void homeMagnet() {              // working now
@@ -336,6 +486,10 @@ void homeMagnet() {              // working now
       magnetTriggered = true;  //var for keeping track of magnet
     }
     MAGNET.run();  //MOVE THE FUKIN MOTOR please
+    checkForStop();
+    if (stopRequested) { MAGNET.stop(); return; }
+    if (pauseRequested && pauseAllowedHere) { MAGNET.stop(); waitForResume(); if (stopRequested) return; }
+  
     //Serial.println("I'm in the loop");
     if (magnetTriggered == true) {  //magnet home switch triggered
       MAGNET.stop();
@@ -361,6 +515,9 @@ void moveMotorH(int DIR, uint32_t speed, float distance) {  // 1 step is 1.8 deg
   while (1) {
     //run motor
     HORIZONTAL.run();
+    checkForStop();
+    if (stopRequested) { HORIZONTAL.stop(); return; }
+    if (pauseRequested && pauseAllowedHere) { HORIZONTAL.stop(); waitForResume(); if (stopRequested) return; }
 
     //Serial.println("I'm in the loop");
     if (HORIZONTAL.distanceToGo() == 0) {
@@ -397,13 +554,16 @@ void moveMotorM(uint32_t DIR, uint32_t speed, float distance) {  // 1 step is 1.
   while (1) {
     //run motor
     MAGNET.run();
+    checkForStop();
+    if (stopRequested) { MAGNET.stop(); return; }
+    if (pauseRequested && pauseAllowedHere) { MAGNET.stop(); waitForResume(); if (stopRequested) return; }
 
     //Serial.println("I'm in the loop");
     if (MAGNET.distanceToGo() == 0) {  //break when the steps have steppec
       MAGNET.stop();
       break;
-      //Serial.println("I broke the loop");
     }
+      //Serial.println("I broke the loop");
     delayMicroseconds(500);  // or try 100–500 µ
   }
 }
@@ -436,6 +596,9 @@ void moveComb(int DIR, uint32_t speed, float distance) {  //
   while (1) {
     //run the A motor
     COMB.run();
+    checkForStop();
+    if (stopRequested) { COMB.stop(); return; }
+    if (pauseRequested && pauseAllowedHere) { COMB.stop(); waitForResume(); if (stopRequested) return; }
 
     //Serial.println("I'm in the loop");
     if (COMB.distanceToGo() == 0) {
@@ -446,6 +609,8 @@ void moveComb(int DIR, uint32_t speed, float distance) {  //
     delayMicroseconds(500);  // or try 100–500 µ
   }
 }
+
+
 uint32_t distanceToStepsC(float distance) {  // 20mm lead
   //return distance * 200 * 16; // one rotation for full step
   return (uint32_t)(distance * (1600.0 / 20.0) + 0.5f);  //changed from 3200 to 1600
@@ -481,17 +646,17 @@ void magnetPushComb(float pushDist) {
   digitalWrite(COMB_EN, LOW);  //comb on to save its place
 }
 
-/**
- * @brief: Pause the motor for a number of seconds
- * @param pauseDuration: pause duration in seconds
- * @retval: none
- */
-void pauseMotors(uint32_t pauseDuration) {
-  HORIZONTAL.stop();
-  MAGNET.stop();
-  COMB.stop();
-  delay(pauseDuration * 1000);  // convert from milliseconds to seconds for delay function
-}
+// /**
+//  * @brief: Pause the motor for a number of seconds
+//  * @param pauseDuration: pause duration in seconds
+//  * @retval: none
+//  */
+// void pauseMotors(uint32_t pauseDuration) {
+//   HORIZONTAL.stop();
+//   MAGNET.stop();
+//   COMB.stop();
+//   delay(pauseDuration * 1000);  // convert from milliseconds to seconds for delay function
+// }
 
 /**
  * @brief: move agitaton motor up and down rapidly
@@ -502,8 +667,9 @@ void pauseMotors(uint32_t pauseDuration) {
  * @retval: 1 if finished, 0 if error
  * @author: Gregory Ziegler
  */
-uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t totalVolume, uint16_t percentDepth) {
-  //42.2 = height of whole well
+
+uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t totalVolume, uint16_t percentDepth, uint32_t startFromMs = 0) {
+  //42.2 = height of whole wells
   delay(200);
   COMB.enableOutputs();
   //30 mm is the distance between the tip of the combs inserted into the wells and the bottom of the wells
@@ -520,35 +686,90 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
   int movingDown = 1;  //should initially be true
 
   uint16_t topSteps = distanceToStepsC(top);  //
-  // Start timed agitation loop
-  unsigned long startTime = millis();  //snag initial time
 
-  //move to top of sample volume
-  COMB.moveTo(-topSteps);             //topSteps
-  while (COMB.distanceToGo() != 0) {  // do comb run
-    COMB.run();                       // run until we are at the top of the solution
+  uint32_t totalMs = agitateDuration * 1000;
+  unsigned long startTime = millis() - startFromMs;
+
+
+  // skip the initial approach if we're resuming mid-agitation — the comb
+  // is already at depth, re-approaching would be redundant motion
+  if (startFromMs == 0) {
+    COMB.moveTo(-topSteps);
+    while (COMB.distanceToGo() != 0) {
+      COMB.run();
+      checkForStop();
+      if (stopRequested) { COMB.stop(); return 0; }
+      // if (pauseRequested) { COMB.stop(); agitateRemainingMs = totalMs - (millis() - startTime); return 2; }
+    }
+    delay(2000);
+
+    COMB.move(-agitSteps);
+    while (COMB.distanceToGo() != 0) {
+      COMB.run();
+      checkForStop();
+      if (stopRequested) { COMB.stop(); return 0; }
+      // if (pauseRequested) { COMB.stop(); agitateRemainingMs = totalMs - (millis() - startTime); return 2; }
+    }
   }
-  delay(2000);
 
-  //move to percent depth of liquid
-  COMB.move(-agitSteps);
-  while (COMB.distanceToGo() != 0) {
+  pauseAllowedHere = true;
+
+  while (millis() - startTime < totalMs) {
     COMB.run();
-  }
-
-  //alternate direcitons
-  while (millis() - startTime < (agitateDuration * 1000)) {  //millis() - startTime < (agitateDuration * 1000)
-    COMB.run();                                              // run the motor
-    if (COMB.distanceToGo() == 0) {                          //check if we hit the desired agitation depth
-      //COMB.moveTo(movingDown ? top : agitDistance); //changed bottom to agitDistance
+    checkForStop();
+    if (stopRequested) { COMB.stop(); return 0; }
+    if (pauseRequested) {
+      COMB.stop();
+      agitateRemainingMs = totalMs - (millis() - startTime);
+      pauseAllowedHere = false;
+      return 2;
+    }
+    if (COMB.distanceToGo() == 0) {
       COMB.move(movingDown * agitSteps);
       movingDown = movingDown * -1;
     }
   }
 
-  COMB.stop();  //hault
+  pauseAllowedHere = false;
+  COMB.stop();
   return 1;
 }
+
+
+  //-------previous code without saving duration left for Pause fucntion:
+
+  // // Start timed agitation loop
+  // unsigned long startTime = millis();  //snag initial time
+
+  // //move to top of sample volume
+  // COMB.moveTo(-topSteps);             //topSteps
+  // while (COMB.distanceToGo() != 0) {  // do comb run
+  //   COMB.run();                       // run until we are at the top of the solution
+  //   if (checkForStop()) { COMB.stop(); return 0; }
+  // }
+  // delay(2000);
+
+  // //move to percent depth of liquid
+  // COMB.move(-agitSteps);
+  // while (COMB.distanceToGo() != 0) {
+  //   COMB.run();
+  //   if (checkForStop()) { COMB.stop(); return 0; }
+  // }
+
+  // //alternate direcitons
+  // while (millis() - startTime < (agitateDuration * 1000)) {  //millis() - startTime < (agitateDuration * 1000)
+  //   COMB.run();
+  //   if (checkForStop()) { COMB.stop(); return 0; }                                              // run the motor
+  //   if (COMB.distanceToGo() == 0) {                          //check if we hit the desired agitation depth
+  //     //COMB.moveTo(movingDown ? top : agitDistance); //changed bottom to agitDistance
+  //     COMB.move(movingDown * agitSteps);
+  //     movingDown = movingDown * -1;
+  //   }
+  // }
+
+  // COMB.stop();  //hault
+  // return 1;
+// }
 
 //set all motor axis to a set 000 position
 uint8_t home() {
@@ -611,6 +832,8 @@ uint8_t home() {
 
   //check if we are done
   if (homingH == false && homingM == false && homingC == false) {
+    Serial.println(">>> applying 3.75mm horizontal nudge <<<");
+
     //we will now nudged the horizontal axis towards home slighlty more so the comb is more alligned
     moveMotorH(1, 1, 3.75);  //unlcear on distance must tune. this seems to be the most i can go without snapping the rubber stopper
     HORIZONTAL.setCurrentPosition(0);
@@ -726,6 +949,12 @@ bool verifyBuffer() {
 }
 
 void runProtocol(bool dryRun) {
+  // if (!dryRun) {
+  //   while (1) {
+  //     if (home() == 1) break;
+  //   }
+  // }
+  home();
   wellIndex = 1;   // reset for each run
 
   for (int i = 0; i < stepCount; i++) {
@@ -750,7 +979,13 @@ void runProtocol(bool dryRun) {
         Serial.print(", pause "); Serial.print(parsed.pausetime); Serial.println("s between");
         if (!dryRun) {
           for (int r = 0; r < parsed.repeats; r++) {
-            agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);
+            uint8_t result = agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);
+            while (result == 2) {
+              waitForResume();
+              if (stopRequested) break;
+              result = agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume, agitateRemainingMs);
+            }
+            if (stopRequested) break;
             delay(1000 * parsed.pausetime);
           }
         }
@@ -782,7 +1017,14 @@ void runProtocol(bool dryRun) {
         Serial.println("INVALID - skipped");
         break;
     }
+    if (stopRequested) break;
 
+  }
+
+  if (stopRequested) {
+    stopProtocol();
+    stopRequested = false;
+    return;
   }
 
   if (!dryRun) readyComb();
@@ -798,6 +1040,19 @@ void loop() {
     String receivedString = Serial.readStringUntil('\n');
     receivedString.trim();
     if (receivedString.length() == 0) return;
+
+    if (receivedString == "STOP") {
+        Serial.println("--- STOP received, homing now ---");
+        HORIZONTAL.setMaxSpeed(700); HORIZONTAL.setAcceleration(9999);
+        HORIZONTAL.moveTo(HORIZONTAL.currentPosition() + 1600);
+        MAGNET.setMaxSpeed(800); MAGNET.setAcceleration(999999);
+        MAGNET.moveTo(MAGNET.currentPosition() + 100000);
+        COMB.setMaxSpeed(1000); COMB.setAcceleration(999999);
+        COMB.moveTo(COMB.currentPosition() + 100000000);
+        while (1) { if (home() == 1) break; }
+        Serial.println("--- homed, ready for new protocol ---");
+      return;
+    }
 
     if (receivedString == "END") {
       Serial.print("--- received ");
