@@ -1,22 +1,75 @@
 import serial
 import time
 
+active_serial = None
+stop_flag = {"stopped": False}
+
 def send_and_listen(port, baud, message, listen_seconds=5):
+    global active_serial
+    stop_flag["stopped"] = False
     try:
         with serial.Serial(port, baud, timeout=1) as ser:
+            active_serial = ser
             print(f"Serial port {port} opened at {baud} baud.")
             time.sleep(2)
             ser.write((message + "\r\n").encode())
             print("Sent. Listening...\n")
 
             deadline = time.time() + listen_seconds
-            while time.time() < deadline:
+            board_paused = False
+            while time.time() < deadline or board_paused:
+                if stop_flag["stopped"]:
+                    break
                 line = ser.readline()
                 if line:
-                    print(line.decode(errors="replace").rstrip())
+                    decoded = line.decode(errors="replace").rstrip()
+                    print(decoded)
+                    if "PAUSED" in decoded:
+                        board_paused = True
+                    elif "RESUMING" in decoded:
+                        board_paused = False
+                        deadline = time.time() + listen_seconds  # give it a fresh window post-resume
             print("\n--- done listening ---")
     except serial.SerialException as e:
         print(f"Serial error: {e}")
+    finally:
+        active_serial = None
+
+
+def send_stop_command():
+    global active_serial
+    if active_serial is not None and active_serial.is_open:
+        try:
+            active_serial.write(b"STOP\r\n")
+            stop_flag["stopped"] = True
+            return True
+        except Exception as e:
+            print(f"Failed to send STOP: {e}")
+            return False
+    return False
+
+def send_pause_command():
+    global active_serial
+    if active_serial is not None and active_serial.is_open:
+        try:
+            active_serial.write(b"PAUSE\r\n")
+            return True
+        except Exception as e:
+            print(f"Failed to send PAUSE: {e}")
+            return False
+    return False
+
+
+def send_resume_command():
+    global active_serial
+    if active_serial is not None and active_serial.is_open:
+        try:
+            active_serial.write(b"RESUME\r\n")
+            return True
+        except Exception as e:
+            print(f"Failed to send RESUME: {e}")
+            return False
+    return False
 
 def send_uart_text(port_name, baud_rate, message):
     """
