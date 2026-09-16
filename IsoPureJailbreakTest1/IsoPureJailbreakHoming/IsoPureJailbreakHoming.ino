@@ -114,6 +114,18 @@ unsigned int mapSpeedC(float value);
 
 //--------
 bool stopRequested = false;
+// User Pause freezes the active motor command without changing its target or
+// EN-pin configuration, then resumes that same command from its saved step.
+bool pauseRequested = false;
+bool protocolPaused = false;
+bool protocolRunning = false;
+unsigned long totalPausedMillis = 0;
+long pausedHorizontalTarget = 0;
+long pausedMagnetTarget = 0;
+long pausedCombTarget = 0;
+
+void pauseNow();
+bool pauseableDelay(uint32_t durationMs);
 
 bool checkForStop() {
   if (Serial.available() > 0) {
@@ -123,12 +135,79 @@ bool checkForStop() {
       stopRequested = true;
       return true;
     }
+    if (s == "PAUSE") {
+      if (protocolRunning && !protocolPaused && !pauseRequested) {
+        pauseRequested = true;
+      }
+    }
+  }
+
+  // Do not call .stop() here.  AccelStepper retains each motor's target and
+  // current position while its driver remains enabled; withholding .run()
+  // freezes the exact in-progress move until RESUME arrives.
+  if (pauseRequested && protocolRunning && !stopRequested && !protocolPaused) {
+    pauseNow();
   }
   return false;
 } 
 
+// This freezes motion exactly where it is.  In particular, it leaves the
+// current EN-pin configuration untouched, so the axis currently holding a
+// comb/magnet handoff remains enabled while the protocol is paused.
+void pauseNow() {
+  pauseRequested = false;
+  protocolPaused = true;
+  // Keep the exact physical step position, but save the intended endpoints.
+  // On resume we restart the acceleration profile from rest rather than
+  // commanding the driver to continue at its pre-pause instantaneous speed.
+  pausedHorizontalTarget = HORIZONTAL.targetPosition();
+  pausedMagnetTarget = MAGNET.targetPosition();
+  pausedCombTarget = COMB.targetPosition();
+  unsigned long pauseStarted = millis();
+  Serial.print("ASATS:STATE:PAUSED:WELL=");
+  Serial.println(wellIndex);
+
+  while (protocolPaused && !stopRequested) {
+    if (Serial.available() > 0) {
+      String s = Serial.readStringUntil('\n');
+      s.trim();
+      if (s == "STOP") {
+        stopRequested = true;
+      } else if (s == "RESUME") {
+        HORIZONTAL.setCurrentPosition(HORIZONTAL.currentPosition());
+        MAGNET.setCurrentPosition(MAGNET.currentPosition());
+        COMB.setCurrentPosition(COMB.currentPosition());
+        HORIZONTAL.moveTo(pausedHorizontalTarget);
+        MAGNET.moveTo(pausedMagnetTarget);
+        COMB.moveTo(pausedCombTarget);
+        protocolPaused = false;
+        // Kept for compatibility with the existing Send_UART.py listener.
+        Serial.println("ASATS:STATE:RESUMING");
+      }
+    }
+    delay(5);
+  }
+
+  totalPausedMillis += millis() - pauseStarted;
+}
+
+// Protocol timing excludes time spent paused, so a requested 60-second
+// incubation or dwell still gets its full 60 seconds after Resume.
+bool pauseableDelay(uint32_t durationMs) {
+  unsigned long started = millis();
+  unsigned long pausedAtStart = totalPausedMillis;
+  while ((unsigned long)(millis() - started) - (totalPausedMillis - pausedAtStart) < durationMs) {
+    checkForStop();
+    if (stopRequested) return false;
+    delay(1);
+  }
+  return true;
+}
+
 void stopProtocol() {
   stopRequested = false;
+  pauseRequested = false;
+  protocolPaused = false;
   Serial.println("--- STOP received, lifting and re-homing ---");
   // moveComb(1, 2, stopLiftDist);  // small immediate lift, clear of the rack
 
@@ -157,6 +236,7 @@ void stopProtocol() {
     }
   }
   Serial.println("--- stopped and homed, ready for new protocol ---");
+  Serial.println("ASATS:STATE:IDLE:RESULT=STOPPED");
   
 }
 
@@ -165,9 +245,7 @@ void pauseMotors(uint32_t pauseDuration) {
   MAGNET.stop();
   COMB.stop();
     for (uint32_t s = 0; s < pauseDuration; s++) {
-      delay(1000);
-      checkForStop();
-      if (stopRequested) return;
+      if (!pauseableDelay(1000)) return;
     }
 }
 
@@ -281,7 +359,7 @@ void setup() {
 void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
   //move from one well to the next
   magnetPushComb(102.0);            //push the magnets all the way down into the rack
-  delay(100);                       //slight wait before pause so the time is consistanct
+  if (!pauseableDelay(100)) return; //slight wait before pause so the time is consistanct
   pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
   if (stopRequested) return;
 
@@ -291,7 +369,7 @@ void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   moveMotorH(-1, horzontalSpeed, ((normHorizontaldist * 2)) + 0.5f);    //double the distance for this part to put it in well 8
   if (stopRequested) return;
   magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
-  delay(200);                                         //slight wait // 0.5f is for floating point accuracy or some shit
+  if (!pauseableDelay(200)) return;                   //slight wait // 0.5f is for floating point accuracy or some shit
   homeMagnet();                                       // working!!!
   if (stopRequested) return;
                                                       //configure for homing
@@ -386,7 +464,7 @@ void moveInitSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAt
     if (stopRequested) return;
     magnetPushComb(102.0); //this is the distance from the magnet home to the bottom of the well rack
     if (stopRequested) return;
-    delay(100);                       //slight wait before pause so the time is consistanct
+    if (!pauseableDelay(100)) return; //slight wait before pause so the time is consistanct
     pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
     if (stopRequested) return;
     combPushMagnet(clearSampleDist);                    //move sample out of rack good
@@ -397,7 +475,7 @@ void moveInitSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAt
     if (stopRequested) return;
     magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
     if (stopRequested) return;
-    delay(200);                                         //slight wait
+    if (!pauseableDelay(200)) return;                   //slight wait
     homeMagnet();                                       //testing...working????? working!!!
     if (stopRequested) return;
     readyComb();                                        //put the  combs above the well at the consistant spot
@@ -419,7 +497,7 @@ void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   if (stopRequested) return;
   magnetPushComb(102.0);
   if (stopRequested) return;
-  delay(100);
+  if (!pauseableDelay(100)) return;
   pauseMotors(initialSurfaceTime);
   if (stopRequested) return;
   combPushMagnet(clearSampleDist);
@@ -432,7 +510,7 @@ void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   if (stopRequested) return;
   magnetPushComb(clearSampleDist + clamplingOffset);
   if (stopRequested) return;
-  delay(200);
+  if (!pauseableDelay(200)) return;
   homeMagnet();
   if (stopRequested) return;
   readyComb();
@@ -591,7 +669,7 @@ void combPushMagnet(float pushDist) {  //working...just kidding
   // while (COMB.distanceToGo() != 0) {
   //   COMB.run();  //run
   // }
-  delay(200);                    //give the motor a chance to be in a fixed position...i heard a click and got scared
+  if (!pauseableDelay(200)) return; //give the motor a chance to be in a fixed position...i heard a click and got scared
   digitalWrite(MAGNET_EN, LOW);  //magnet on to save its place
 }
 //logic to use the magnet axis to push the comb axis up so we can stay clamped together without losing the smaple
@@ -604,7 +682,7 @@ void magnetPushComb(float pushDist) {
   // while (MAGNET.distanceToGo() != 0) {
   //   MAGNET.run();  //run
   // }
-  delay(200);                  //give the motor a chance to be in a fixed position...i heard a click and got scared
+  if (!pauseableDelay(200)) return; //give the motor a chance to be in a fixed position...i heard a click and got scared
   digitalWrite(COMB_EN, LOW);  //comb on to save its place
 }
 
@@ -632,7 +710,7 @@ void magnetPushComb(float pushDist) {
 
 uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t totalVolume, uint16_t percentDepth) {
   //42.2 = height of whole wells
-  delay(200);
+  if (!pauseableDelay(200)) return 0;
   COMB.enableOutputs();
   //30 mm is the distance between the tip of the combs inserted into the wells and the bottom of the wells
   // Convert input values to physical parameters
@@ -651,6 +729,7 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
 
   uint32_t totalMs = agitateDuration * 1000;
   unsigned long startTime = millis();
+  unsigned long pausedAtStart = totalPausedMillis;
 
   COMB.moveTo(-topSteps);
   while (COMB.distanceToGo() != 0) {
@@ -658,7 +737,7 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
     checkForStop();
     if (stopRequested) { COMB.stop(); return 0; }
   }
-  delay(2000);
+  if (!pauseableDelay(2000)) return 0;
 
   COMB.move(-agitSteps);
   while (COMB.distanceToGo() != 0) {
@@ -667,7 +746,7 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
     if (stopRequested) { COMB.stop(); return 0; }
   }
 
-  while (millis() - startTime < totalMs) {
+  while ((unsigned long)(millis() - startTime) - (totalPausedMillis - pausedAtStart) < totalMs) {
     COMB.run();
     checkForStop();
     if (stopRequested) { COMB.stop(); return 0; }
@@ -900,6 +979,10 @@ void runProtocol(bool dryRun) {
   //     if (home() == 1) break;
   //   }
   // }
+  protocolRunning = true;
+  pauseRequested = false;
+  protocolPaused = false;
+  Serial.println("ASATS:STATE:RUNNING:STEP=1:WELL=1");
   home();
   wellIndex = 1;   // reset for each run
 
@@ -927,7 +1010,7 @@ void runProtocol(bool dryRun) {
           for (int r = 0; r < parsed.repeats; r++) {
             agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);
             if (stopRequested) break;
-            delay(1000 * parsed.pausetime);
+            if (!pauseableDelay(1000UL * parsed.pausetime)) break;
           }
         }
         break;
@@ -951,18 +1034,21 @@ void runProtocol(bool dryRun) {
           if (!dryRun) moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
           wellIndex += 1;
         }
-        if (!dryRun) delay(2000);
+        if (!dryRun && !pauseableDelay(2000)) break;
         break;
 
       case INVALID:
         Serial.println("INVALID - skipped");
         break;
     }
+    // Catch a command received during the final short delay of this entry.
+    checkForStop();
     if (stopRequested) break;
 
   }
 
   if (stopRequested) {
+    protocolRunning = false;
     stopProtocol();
     stopRequested = false;
     return;
@@ -974,6 +1060,9 @@ void runProtocol(bool dryRun) {
 
   Serial.print(wellIndex);
   Serial.println(" ---");
+  protocolRunning = false;
+  Serial.print("ASATS:STATE:IDLE:RESULT=COMPLETE:WELL=");
+  Serial.println(wellIndex);
 }
 
 void loop() {
@@ -983,16 +1072,14 @@ void loop() {
     if (receivedString.length() == 0) return;
 
     if (receivedString == "STOP") {
-        stopRequested = false;
-        Serial.println("--- STOP received, homing now ---");
-        HORIZONTAL.setMaxSpeed(700); HORIZONTAL.setAcceleration(9999);
-        HORIZONTAL.moveTo(HORIZONTAL.currentPosition() + 1600);
-        MAGNET.setMaxSpeed(800); MAGNET.setAcceleration(999999);
-        MAGNET.moveTo(MAGNET.currentPosition() + 100000);
-        COMB.setMaxSpeed(1000); COMB.setAcceleration(999999);
-        COMB.moveTo(COMB.currentPosition() + 100000000);
-        while (1) { if (home() == 1) break; }
-        Serial.println("--- homed, ready for new protocol ---");
+      // Idle Home/Stop uses the same proven re-home implementation as a
+      // running protocol that receives STOP.
+      stopProtocol();
+      return;
+    }
+
+    if (receivedString == "PAUSE" || receivedString == "RESUME") {
+      Serial.println("ASATS:ERROR:CODE=NOT_RUNNING");
       return;
     }
 
