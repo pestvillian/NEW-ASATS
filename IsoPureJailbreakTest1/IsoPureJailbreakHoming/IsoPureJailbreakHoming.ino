@@ -659,6 +659,20 @@ uint32_t distanceToStepsC(float distance) {  // 20mm lead
 unsigned int mapSpeedC(float value) {
   return (value - 1) * (12000 - 5000) / (9 - 1) + 5000;
 }
+
+//we need agitation to have slower speed
+// Speed 1 = 800 steps/sec; Speed 9 = 6000 steps/sec.
+unsigned int mapAgitationSpeedC(float value) {
+  return (value - 1) * (6000 - 800) / (9 - 1) + 800;
+}
+
+// Lower acceleration gives the comb time to decelerate before reversing.
+// Speed 1 = gentle; Speed 9 = faster.
+unsigned int mapAgitationAccelerationC(float value) {
+  return (value - 1) * (500000 - 30000) / (9 - 1) + 30000;
+}
+
+
 //logic to use the comb axis to push the magnet axis up so we can stay clamped together without losing the smaple
 void combPushMagnet(float pushDist) {  //working...just kidding
   digitalWrite(COMB_EN, LOW);          //comb on
@@ -714,9 +728,9 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
   COMB.enableOutputs();
   //30 mm is the distance between the tip of the combs inserted into the wells and the bottom of the wells
   // Convert input values to physical parameters
-  uint16_t agitationFrequency = mapSpeedC(agitateSpeed);  // Frequency in steps/sec
+  uint16_t agitationFrequency = mapAgitationSpeedC(agitateSpeed);  // Frequency in steps/sec
   COMB.setMaxSpeed(agitationFrequency);                   // High speed target
-  COMB.setAcceleration(3000000);                          // Very aggressive acceleration
+  COMB.setAcceleration(mapAgitationAccelerationC(agitateSpeed));                          // Very aggressive acceleration
 
   // Define positions
   uint16_t top = abs((totalVolume / 50.0) - (42.2) + 0.5f);  //plus initia position??? was 50 well hright -(42.2)
