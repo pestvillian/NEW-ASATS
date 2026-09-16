@@ -4,8 +4,9 @@ import threading
 import time
 import json
 import os
+import serial
 from string_encoder import encode_agitation, encode_moving, encode_pausing
-from Send_UART import send_uart_text, send_and_listen
+from Send_UART import connect, disconnect, get_events, send_pause_command, send_resume_command, send_stop_command, send_text
 
 TERRY_PORT = "/dev/cu.usbmodem101"   # TODO: confirm actual port on lab desktop
 BAUD_RATE = 9600
@@ -251,16 +252,13 @@ send_button.pack(side="left", padx=5)
 tk.Button(action_row, text="Reset Protocol", command=lambda: reset_protocol()).pack(side="left", padx=5)
 
 def stop_protocol():
-    if not send_in_progress:
-        result_label_set("Nothing is running to stop")
-        return
-    from Send_UART import send_stop_command
     if send_stop_command():
-        result_label_set("Stop sent")
+        result_label_set("Home / Stop sent")
     else:
-        result_label_set("No active protocol to stop")
+        result_label_set("Board is not connected")
 
-tk.Button(action_row, text="Stop", command=lambda: stop_protocol(), fg="red").pack(side="left", padx=5)
+tk.Button(action_row, text="Connect", command=lambda: connect_to_board()).pack(side="left", padx=5)
+tk.Button(action_row, text="Home / Stop", command=lambda: stop_protocol(), fg="red").pack(side="left", padx=5)
 tk.Button(action_row, text="Pause", command=lambda: pause_protocol(), fg="orange").pack(side="left", padx=5)
 tk.Button(action_row, text="Resume", command=lambda: resume_protocol(), fg="green").pack(side="left", padx=5)
 
@@ -268,7 +266,6 @@ def pause_protocol():
     if not send_in_progress:
         result_label_set("Nothing is running to pause")
         return
-    from Send_UART import send_pause_command
     if send_pause_command():
         result_label_set("Pause sent")
     else:
@@ -276,7 +273,6 @@ def pause_protocol():
 
 
 def resume_protocol():
-    from Send_UART import send_resume_command
     if send_resume_command():
         result_label_set("Resume sent")
     else:
@@ -537,7 +533,7 @@ def result_label_set(text):
 #  Main UI refresh
 # ============================================================
 def update_ui():
-    send_button.config(state="normal" if is_protocol_valid() else "disabled")
+    send_button.config(state="normal" if board_connected and not send_in_progress and is_protocol_valid() else "disabled")
     validation_label.config(text=validation_message())
 
     for n, b in well_buttons.items():
@@ -604,11 +600,34 @@ def estimate_total_seconds(steps):
 
 
 send_in_progress = False
+board_connected = False
+protocol_timer_active = False
+protocol_started_at = None
+protocol_paused_at = None
+protocol_paused_seconds = 0.0
+
+def connect_to_board():
+    global board_connected
+    result_label_set("Connecting; the board will restart and home...")
+    root.update_idletasks()
+    try:
+        connect(TERRY_PORT, BAUD_RATE)
+        board_connected = True
+        result_label_set("Connected")
+        update_ui()
+    except serial.SerialException as e:
+        board_connected = False
+        result_label_set(f"Could not connect to {TERRY_PORT}: {e}")
+        update_ui()
 
 def send_protocol():
-    global send_in_progress
+    global send_in_progress, protocol_timer_active, protocol_started_at
+    global protocol_paused_at, protocol_paused_seconds
     if send_in_progress:
         result_label_set("A protocol is already running — wait for it to finish or Stop it first")
+        return
+    if not board_connected:
+        result_label_set("Connect to the board before sending a protocol")
         return
     if not is_protocol_valid():
         result_label_set(validation_message())
@@ -621,38 +640,68 @@ def send_protocol():
     full_text = "\r\n".join(flat_steps) + "\r\nEND"
     print("Sending full protocol:\n" + full_text)
 
-    total_seconds = estimate_total_seconds(flat_steps)
-    listen_seconds = max(60, total_seconds + 60)
+    if not send_text(full_text):
+        result_label_set("Board is not connected")
+        return
 
     send_in_progress = True
+    protocol_timer_active = True
+    protocol_started_at = time.time()
+    protocol_paused_at = None
+    protocol_paused_seconds = 0.0
     send_button.config(state="disabled")
-    start_time = time.time()
-    running = {"active": True}
 
     def tick():
-        if running["active"]:
-            elapsed = int(time.time() - start_time)
-            remaining = max(0, total_seconds - elapsed)
-            timer_label.config(text=f"Running: {remaining // 60}:{remaining % 60:02d}")
-            if remaining > 0:
-                root.after(1000, tick)
-
-    def worker():
-        global send_in_progress
-        try:
-            send_and_listen(TERRY_PORT, BAUD_RATE, full_text, listen_seconds=listen_seconds)
-            result_label_set("Protocol sent and completed")
-        except Exception as e:
-            result_label_set(f"Could not reach the board on {TERRY_PORT}")
-            print(f"Serial error: {e}")
-        finally:
-            running["active"] = False
-            timer_label.config(text="")
-            send_in_progress = False
-            send_button.config(state="normal" if is_protocol_valid() else "disabled")
+        if protocol_timer_active:
+            paused_now = 0.0
+            if protocol_paused_at is not None:
+                paused_now = time.time() - protocol_paused_at
+            elapsed = int(time.time() - protocol_started_at - protocol_paused_seconds - paused_now)
+            state = "Paused" if protocol_paused_at is not None else "Running"
+            timer_label.config(text=f"{state}: {elapsed // 60}:{elapsed % 60:02d}")
+            root.after(1000, tick)
 
     tick()
-    threading.Thread(target=worker, daemon=True).start()
+
+
+def drain_serial_events():
+    """Run in Tk's main thread; reader threads never touch Tk widgets."""
+    global board_connected, send_in_progress, protocol_timer_active
+    global protocol_paused_at, protocol_paused_seconds
+    for event_type, value in get_events():
+        if event_type == "connection":
+            if value == "CONNECTED":
+                board_connected = True
+            else:
+                board_connected = False
+                send_in_progress = False
+                protocol_timer_active = False
+                timer_label.config(text="")
+                result_label_set(f"Disconnected: {value}")
+            update_ui()
+            continue
+
+        print(value)
+        if value.startswith("ASATS:STATE:PAUSED"):
+            if protocol_paused_at is None:
+                protocol_paused_at = time.time()
+            result_label_set("Protocol paused")
+        elif value.startswith("ASATS:STATE:RESUMING"):
+            if protocol_paused_at is not None:
+                protocol_paused_seconds += time.time() - protocol_paused_at
+                protocol_paused_at = None
+            result_label_set("Protocol resuming")
+        elif value.startswith("ASATS:STATE:IDLE:"):
+            send_in_progress = False
+            protocol_timer_active = False
+            protocol_paused_at = None
+            timer_label.config(text="")
+            result_label_set("Protocol complete" if "RESULT=COMPLETE" in value else "Stopped and homed")
+            update_ui()
+        elif value.startswith("ASATS:ERROR:"):
+            result_label_set(value)
+
+    root.after(50, drain_serial_events)
 
 
 def reset_protocol():
@@ -781,4 +830,11 @@ show_fields()
 show_overview()
 refresh_protocol_list()
 update_ui()
+root.after(50, drain_serial_events)
+
+def close_application():
+    disconnect()
+    root.destroy()
+
+root.protocol("WM_DELETE_WINDOW", close_application)
 root.mainloop()

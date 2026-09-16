@@ -1,106 +1,123 @@
-import serial
+import queue
+import threading
 import time
 
+import serial
+
+
 active_serial = None
-stop_flag = {"stopped": False}
+_serial_lock = threading.Lock()
+_reader_thread = None
+_reader_stop = threading.Event()
+_events = queue.Queue()
 
-def send_and_listen(port, baud, message, listen_seconds=5):
+
+def connect(port, baud, boot_seconds=2):
+    """Open one serial connection for the whole GUI session."""
+    global active_serial, _reader_thread
+
+    with _serial_lock:
+        if active_serial is not None and active_serial.is_open:
+            return True
+        active_serial = serial.Serial(port=port, baudrate=baud, timeout=0.2)
+
+    # Opening this board resets it.  Do not send a protocol while it homes.
+    time.sleep(boot_seconds)
+    _reader_stop.clear()
+    _reader_thread = threading.Thread(target=_reader_loop, daemon=True)
+    _reader_thread.start()
+    _events.put(("connection", "CONNECTED"))
+    return True
+
+
+def disconnect():
+    """Close the persistent connection when the GUI exits or Disconnect is used."""
     global active_serial
-    stop_flag["stopped"] = False
-    try:
-        with serial.Serial(port, baud, timeout=1) as ser:
-            active_serial = ser
-            print(f"Serial port {port} opened at {baud} baud.")
-            time.sleep(2)
-            ser.write((message + "\r\n").encode())
-            print("Sent. Listening...\n")
-
-            deadline = time.time() + listen_seconds
-            board_paused = False
-            while time.time() < deadline or board_paused:
-                if stop_flag["stopped"]:
-                    break
-                line = ser.readline()
-                if line:
-                    decoded = line.decode(errors="replace").rstrip()
-                    print(decoded)
-                    if "PAUSED" in decoded:
-                        board_paused = True
-                    elif "RESUMING" in decoded:
-                        board_paused = False
-                        deadline = time.time() + listen_seconds  # give it a fresh window post-resume
-            print("\n--- done listening ---")
-    except serial.SerialException as e:
-        print(f"Serial error: {e}")
-    finally:
+    _reader_stop.set()
+    with _serial_lock:
+        ser = active_serial
         active_serial = None
+        if ser is not None and ser.is_open:
+            ser.close()
+    _events.put(("connection", "DISCONNECTED"))
+
+
+def is_connected():
+    with _serial_lock:
+        return active_serial is not None and active_serial.is_open
+
+
+def _reader_loop():
+    global active_serial
+    try:
+        while not _reader_stop.is_set():
+            with _serial_lock:
+                ser = active_serial
+            if ser is None or not ser.is_open:
+                return
+            line = ser.readline()
+            if line:
+                _events.put(("line", line.decode(errors="replace").rstrip()))
+    except (serial.SerialException, OSError) as exc:
+        _events.put(("connection", f"ERROR:{exc}"))
+    finally:
+        with _serial_lock:
+            if active_serial is not None:
+                try:
+                    active_serial.close()
+                except serial.SerialException:
+                    pass
+                active_serial = None
+
+
+def get_events():
+    """Return all pending reader events; call this only from Tk's main thread."""
+    events = []
+    while True:
+        try:
+            events.append(_events.get_nowait())
+        except queue.Empty:
+            return events
+
+
+def send_text(message):
+    """Send one command or a complete CR/LF-delimited protocol."""
+    payload = (message.rstrip("\r\n") + "\r\n").encode("utf-8")
+    with _serial_lock:
+        if active_serial is None or not active_serial.is_open:
+            return False
+        try:
+            active_serial.write(payload)
+            active_serial.flush()
+            return True
+        except (serial.SerialException, OSError) as exc:
+            _events.put(("connection", f"ERROR:{exc}"))
+            return False
 
 
 def send_stop_command():
-    global active_serial
-    if active_serial is not None and active_serial.is_open:
-        try:
-            active_serial.write(b"STOP\r\n")
-            stop_flag["stopped"] = True
-            return True
-        except Exception as e:
-            print(f"Failed to send STOP: {e}")
-            return False
-    return False
+    return send_text("STOP")
+
 
 def send_pause_command():
-    global active_serial
-    if active_serial is not None and active_serial.is_open:
-        try:
-            active_serial.write(b"PAUSE\r\n")
-            return True
-        except Exception as e:
-            print(f"Failed to send PAUSE: {e}")
-            return False
-    return False
+    return send_text("PAUSE")
 
 
 def send_resume_command():
-    global active_serial
-    if active_serial is not None and active_serial.is_open:
-        try:
-            active_serial.write(b"RESUME\r\n")
-            return True
-        except Exception as e:
-            print(f"Failed to send RESUME: {e}")
-            return False
-    return False
+    return send_text("RESUME")
+
+
+# Backward-compatible names used by older GUI revisions.  They now send over
+# the one persistent connection and intentionally do not open or close a port.
+def send_and_listen(port, baud, message, listen_seconds=5):
+    if not is_connected():
+        connect(port, baud)
+    if not send_text(message):
+        raise serial.SerialException("Serial port is not connected")
+
 
 def send_uart_text(port_name, baud_rate, message):
-    """
-    Opens a serial port, sends a text message, and closes the port.
+    if not is_connected():
+        connect(port_name, baud_rate)
+    return send_text(message)
 
-    :param port_name: The name of the serial port (e.g., "COM3" on Windows, 
-                      "/dev/ttyUSB0" on Linux, "/dev/ttyACM0" on Raspberry Pi).
-    :param baud_rate: The baud rate for the communication (must match the device).
-    :param message: The text message string to send.
-    """
-    try:
-        ser = serial.Serial(port=port_name, baudrate=baud_rate, timeout=1)
-        time.sleep(2)
-
-        print(f"Serial port {port_name} opened successfully at {baud_rate} baud.")
-
-        data_to_send = (message + '\r\n').encode('utf-8') 
-        ser.write(data_to_send)
-        print(f"Sent message: '{message}'")
-
-        time.sleep(0.1)
-        if ser.in_waiting > 0:
-            response_bytes = ser.readline()
-            response_string = response_bytes.decode('utf-8').strip()
-            print(f"Received response: {response_string}")
-
-    except serial.SerialException as e:
-        print(f"Error opening or communicating with serial port: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-    finally:
-        if 'ser' in locals() and ser.is_open:
-            ser.close()
-            print(f"Serial port {port_name} closed.")
