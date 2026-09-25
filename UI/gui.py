@@ -32,9 +32,9 @@ field_defs = {
     ],
     "MOVING": [
         ("Bead Attachment Time (sec)", "initial_surface_time", 0, 999),
-        ("Speed", "speed", 0, 9),
-        ("Stop At Sequences (unused)", "stop_at_sequences", 0, 9),
-        ("Sequence Pause Time (unused)", "sequence_pause_time", 0, 99),
+        ("Speed", "speed", 1, 9),
+        ("Lift Stages (1 = straight up)", "stop_at_sequences", 1, 9),
+        ("Pause At Each Stage (sec)", "sequence_pause_time", 0, 99),
     ],
     "PAUSING": [
         ("Duration (sec)", "duration", 0, 9),
@@ -83,9 +83,7 @@ def describe_step(step):
         return (f"Agitation — speed {v['speed']}, {v['duration']}s, {v['volume']}mL, "
                 f"{v['percent_volume']}%, pause {v['pausetime']}s, x{v['repeats']}")
     elif t == "MOVING":
-        if v.get("stop_at_sequences") == 1:
-            return "Skip — relocate only, no bead collection"
-        return f"Moving out — bead attach {v['initial_surface_time']}s, speed {v['speed']}"
+        return f"Moving out — bead attach {v['initial_surface_time']}s, speed {v['speed']}, {v['stop_at_sequences']} stages, {v['sequence_pause_time']}s each"
     else:
         return f"Pausing — {v['duration']}s"
 
@@ -94,9 +92,6 @@ def label_step(encoded):
     if encoded.startswith("A"):
         return f"[Agitation] {encoded}"
     elif encoded.startswith("M"):
-        # stop_at_sequences digit sits at a fixed position in the encoded string
-        if len(encoded) >= 6 and encoded[5] == "1":
-            return f"[Skip]      {encoded}"
         return f"[Moving]    {encoded}"
     elif encoded.startswith("P"):
         return f"[Pausing]   {encoded}"
@@ -149,7 +144,9 @@ tk.Button(editor_btn_frame, text="Add Step", command=lambda: add_step()).pack(si
 tk.Button(editor_btn_frame, text="Delete Last Step", command=lambda: delete_last_step()).pack(side="left", padx=5)
 tk.Button(editor_btn_frame, text="Cancel Edit", command=lambda: cancel_edit()).pack(side="left", padx=5)
 tk.Button(editor_btn_frame, text="Finish Well", command=lambda: finish_well()).pack(side="left", padx=5)
-tk.Button(editor_btn_frame, text="Skip Well", command=lambda: skip_well()).pack(side="left", padx=5)
+# Skip Well disabled: firmware no longer supports skip (stopAtSequences now = lift stages),
+# so this button would send a normal move with 0 s bead attachment instead of a skip.
+# tk.Button(editor_btn_frame, text="Skip Well", command=lambda: skip_well()).pack(side="left", padx=5)
 tk.Button(editor_btn_frame, text="Set As Last Well", command=lambda: finish_last_well()).pack(side="left", padx=5)
 
 
@@ -257,7 +254,11 @@ def stop_protocol():
     else:
         result_label_set("Board is not connected")
 
-tk.Button(action_row, text="Connect", command=lambda: connect_to_board()).pack(side="left", padx=5)
+# Greyed out while connected (or while a connection attempt is in progress);
+# update_ui() re-enables it whenever board_connected goes False.
+connect_button = tk.Button(action_row, text="Connect", command=lambda: connect_to_board(),
+                           disabledforeground="#777777")
+connect_button.pack(side="left", padx=5)
 tk.Button(action_row, text="Home / Stop", command=lambda: stop_protocol(), fg="red").pack(side="left", padx=5)
 tk.Button(action_row, text="Pause", command=lambda: pause_protocol(), fg="orange").pack(side="left", padx=5)
 tk.Button(action_row, text="Resume", command=lambda: resume_protocol(), fg="green").pack(side="left", padx=5)
@@ -442,6 +443,9 @@ def finish_well():
     update_ui()
 
 def skip_well():
+    # Not currently reachable (button commented out above). Kept for when skip
+    # support returns to the firmware — the stop_at_sequences value below would
+    # need to match whatever the firmware then uses to mean "skip".
     global last_well_num
     if active_well is None:
         return
@@ -534,6 +538,7 @@ def result_label_set(text):
 # ============================================================
 def update_ui():
     send_button.config(state="normal" if board_connected and not send_in_progress and is_protocol_valid() else "disabled")
+    connect_button.config(state="disabled" if board_connected else "normal")
     validation_label.config(text=validation_message())
 
     for n, b in well_buttons.items():
@@ -592,7 +597,9 @@ def estimate_total_seconds(steps):
             total += repeats * (duration + pausetime)
         elif s.startswith("M"):
             initial_surface_time = int(s[1:4])
-            total += initial_surface_time + 10  # rough buffer for the physical move itself
+            stops = int(s[5])
+            seqPause = int(s[6:8])
+            total += initial_surface_time + 10 + stops * seqPause  # rough buffer for the physical move itself
         elif s.startswith("P"):
             duration = int(s[1:2])
             total += duration
@@ -608,6 +615,7 @@ protocol_paused_seconds = 0.0
 
 def connect_to_board():
     global board_connected
+    connect_button.config(state="disabled")   # block double-clicks while connecting
     result_label_set("Connecting; the board will restart and home...")
     root.update_idletasks()
     try:
@@ -618,7 +626,7 @@ def connect_to_board():
     except serial.SerialException as e:
         board_connected = False
         result_label_set(f"Could not connect to {TERRY_PORT}: {e}")
-        update_ui()
+        update_ui()   # re-enables Connect since board_connected is False
 
 def send_protocol():
     global send_in_progress, protocol_timer_active, protocol_started_at
@@ -678,7 +686,7 @@ def drain_serial_events():
                 protocol_timer_active = False
                 timer_label.config(text="")
                 result_label_set(f"Disconnected: {value}")
-            update_ui()
+            update_ui()   # also re-enables Connect after a disconnect
             continue
 
         print(value)
