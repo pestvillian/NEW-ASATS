@@ -23,9 +23,9 @@
 //DO NOT CHANGE ANYTHING ABOVE THIS
 
 #define clearSampleDist 37.0
-#define clamplingOffset 22.0    //tuning this one
+#define clamplingOffset 22.0      //tuning this one
 #define initHorizontaldist 8.825  //init horizontal dist is different than the rest
-#define normHorizontaldist 8.825    //idk havn't tried yet
+#define normHorizontaldist 8.825  //idk havn't tried yet
 
 #define horzontalSpeed 1
 
@@ -75,28 +75,49 @@ struct Protocol {
 
 // Protocol Array
 //we want inc->wash->inc->wash->inc->wash->inc->wash->elute
+//testing sequences for moving
 char *protocolInstructions[] = {
-  "A4121100501202",//incubation 2 times mid speed
-  "M0601105", //1->2 60 sec for beads to collect on combs
-  "A6061100500602",// washing 6 seconds with 6 seconds in between
-  "M0031105",//2->3
-  "A4121100501202",//incubation 2 times mid speed
-  "M0601105", //3->4 60 sec for beads to collect on combs
-  "A6061100500602",// washing 6 seconds with 6 seconds in between
-  "M0031105",//4->5
-  "A4121100501202",//incubation 2 times mid speed
-  "M0601105", //5->6 60 sec for beads to collect on combs
-  "A6061100500602",// washing 6 seconds with 6 seconds in between
-  "M0031105",//6->8
-  "A4121100501202",//incubation 2 times mid speed
-  "M0601105", //8->9 60 sec for beads to collect on combs
-  "A6061100500602",// washing 6 seconds with 6 seconds in between
-  "M0031105",//9->10
-  "A6061100500602",// washing 6 seconds with 6 seconds in between
-  "M0031105",//10->11
-  "A9601100500110" //ELUTION this is the very fast very long one
- 
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+  "A4121100501201",  //incubation 2 times mid speed
+  "M0031205",        //1->2 60 sec for beads to collect on combs
+
+
 };
+//
+// "A6061100500602",// washing 6 seconds with 6 seconds in between
+// "M0031105",//2->3
+// "A4121100501202",//incubation 2 times mid speed
+// "M0601105", //3->4 60 sec for beads to collect on combs
+// "A6061100500602",// washing 6 seconds with 6 seconds in between
+// "M0031105",//4->5
+// "A4121100501202",//incubation 2 times mid speed
+// "M0601105", //5->6 60 sec for beads to collect on combs
+// "A6061100500602",// washing 6 seconds with 6 seconds in between
+// "M0031105",//6->8
+// "A4121100501202",//incubation 2 times mid speed
+// "M0601105", //8->9 60 sec for beads to collect on combs
+// "A6061100500602",// washing 6 seconds with 6 seconds in between
+// "M0031105",//9->10
+// "A6061100500602",// washing 6 seconds with 6 seconds in between
+// "M0031105",//10->11
+// "A9601100500110" //ELUTION this is the very fast very long one
 
 
 // global size of protocolInstructions
@@ -149,7 +170,7 @@ bool checkForStop() {
     pauseNow();
   }
   return false;
-} 
+}
 
 // This freezes motion exactly where it is.  In particular, it leaves the
 // current EN-pin configuration untouched, so the axis currently holding a
@@ -237,16 +258,15 @@ void stopProtocol() {
   }
   Serial.println("--- stopped and homed, ready for new protocol ---");
   Serial.println("ASATS:STATE:IDLE:RESULT=STOPPED");
-  
 }
 
 void pauseMotors(uint32_t pauseDuration) {
   HORIZONTAL.stop();
   MAGNET.stop();
   COMB.stop();
-    for (uint32_t s = 0; s < pauseDuration; s++) {
-      if (!pauseableDelay(1000)) return;
-    }
+  for (uint32_t s = 0; s < pauseDuration; s++) {
+    if (!pauseableDelay(1000)) return;
+  }
 }
 
 //--------
@@ -307,72 +327,78 @@ void setup() {
     }
     Serial.println("Homing!!\n");
   }
- //hello fucking world cant work but we can move motors????????????????????? make that make sense
-  // for (int i = 0; i < size; i++) {
-  //   Protocol parsed = parseProtocol(protocolInstructions[i]);  // Parse protocol
-  //   // print out list
-  //   Serial.print("Protocol: ");
-  //   Serial.println(protocolInstructions[i]);
-  //   // for each parsed protocol print out its information based on type
-  //   switch (parsed.type) {
-  //     //call the agitation function
-  //     case AGITATION:
-  //       //call agitation for every repeat we have
-  //       for (int i = 0; i < parsed.repeats; i++) {                                            //just for now don't get pissed
-  //         agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);  // agitate the motors
-  //         delay(1000 * parsed.pausetime);                                                     //delay time inbetween repeats
-  //       }
+  //hello fucking world cant work but we can move motors????????????????????? make that make sense
+  for (int i = 0; i < size; i++) {
+    Protocol parsed = parseProtocol(protocolInstructions[i]);  // Parse protocol
+    // print out list
+    Serial.print("Protocol: ");
+    Serial.println(protocolInstructions[i]);
+    // for each parsed protocol print out its information based on type
+    switch (parsed.type) {
+      //call the agitation function
+      case AGITATION:
+        //call agitation for every repeat we have
+        for (int i = 0; i < parsed.repeats; i++) {                                            //just for now don't get pissed
+          agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);  // agitate the motors
+          delay(1000 * parsed.pausetime);                                                     //delay time inbetween repeats
+        }
 
-  //       break;
+        break;
 
-  //     case PAUSING:
-  //       pauseMotors(parsed.duration);
-  //       break;
+      case PAUSING:
+        pauseMotors(parsed.duration);
+        break;
 
-  //     case MOVING:  // moving function not tested yet.
-  //       //will use the initial moving either at the very beggining or right after the pass
-  //       if (wellIndex == 1) {  // in the first well we have a differnt horizontal difference between wells
-  //         moveInitSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
-  //         wellIndex = wellIndex + 1;  // increment well count
-  //       } else if (wellIndex == 6) {  // will pass the smaple to well 7 the rehome the gantry head
-  //         //moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
-  //         passSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);  //go into well 8 and rehome the gantry head
-  //         wellIndex = wellIndex + 2;                                                                              // increment well count
-  //       } else {
-  //         moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
-  //         wellIndex = wellIndex + 1;  // increment well count
-  //       }
-  //       //after we have moved into the well 7 which means well inde
+      case MOVING:  // moving function not tested yet.
+        //will use the initial moving either at the very beggining or right after the pass
+        if (wellIndex == 1) {  // in the first well we have a differnt horizontal difference between wells
+          moveInitSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          wellIndex = wellIndex + 1;  // increment well count
+        } else if (wellIndex == 6) {  // will pass the smaple to well 7 the rehome the gantry head
+          //moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          passSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);  //go into well 8 and rehome the gantry head
+          wellIndex = wellIndex + 2;                                                                              // increment well count
+        } else {
+          moveSample(parsed.initialSurfaceTime, parsed.speed, parsed.stopAtSequences, parsed.sequencePauseTime);
+          wellIndex = wellIndex + 1;  // increment well count
+        }
+        //after we have moved into the well 7 which means well inde
 
-  //       delay(2000);
+        delay(2000);
 
-  //       break;
-  //     case INVALID:
-  //       Serial.println("Invalid Command");
-  //       break;
-  //   }
-  // }
+        break;
+      case INVALID:
+        Serial.println("Invalid Command");
+        break;
+    }
+  }
 }
 
 
 //after moveSample has been called 6 times we want to rehome the gantry head and continue with the rest of the SM
 void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
   //move from one well to the next
-  magnetPushComb(102.0);            //push the magnets all the way down into the rack
-  if (!pauseableDelay(100)) return; //slight wait before pause so the time is consistanct
-  pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
+  magnetPushComb(102.0);             //push the magnets all the way down into the rack
+  if (!pauseableDelay(100)) return;  //slight wait before pause so the time is consistanct
+  pauseMotors(initialSurfaceTime);   //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
   if (stopRequested) return;
 
   //this part needs to be tested!!!!!!!
-  combPushMagnet(clearSampleDist);                    //move sample out of rack good
+  //stop at sequences implementation
+  for (int i = 0; i < stopAtSequences; i++) {
+    combPushMagnet(clearSampleDist / stopAtSequences);
+    if (stopRequested) return;
+    pauseMotors(sequencePauseTime);
+  }
+  //combPushMagnet(clearSampleDist);  //move sample out of rack good
   //DO NOT INCREASE THIS. AT THIS POINT WE ARE AT THE END OF THE BELT!!!!! DO NOT INCREASE!!!!!!!!!
-  moveMotorH(-1, horzontalSpeed, ((normHorizontaldist * 2)) + 0.5f);    //double the distance for this part to put it in well 8
+  moveMotorH(-1, horzontalSpeed, ((normHorizontaldist * 2)) + 0.5f);  //double the distance for this part to put it in well 8
   if (stopRequested) return;
   magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
   if (!pauseableDelay(200)) return;                   //slight wait // 0.5f is for floating point accuracy or some shit
   homeMagnet();                                       // working!!!
   if (stopRequested) return;
-                                                      //configure for homing
+  //configure for homing
   HORIZONTAL.setMaxSpeed(700);
   HORIZONTAL.setAcceleration(9999);
   HORIZONTAL.moveTo(1600);  //far distance posotive home
@@ -384,7 +410,10 @@ void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   while (digitalRead(Mid) != 0) {  //checking if the midle switch is inverted
     COMB.run();                    // keep moving
     checkForStop();
-    if (stopRequested) { COMB.stop(); return; }
+    if (stopRequested) {
+      COMB.stop();
+      return;
+    }
   }
   COMB.stop();  //stop the comb
   COMB.setCurrentPosition(0);
@@ -392,8 +421,10 @@ void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   while (digitalRead(H_home) != 0) {
     HORIZONTAL.run();
     checkForStop();
-    if (stopRequested) { HORIZONTAL.stop(); return; }
- 
+    if (stopRequested) {
+      HORIZONTAL.stop();
+      return;
+    }
   }
   HORIZONTAL.stop();
   HORIZONTAL.setCurrentPosition(0);
@@ -405,11 +436,14 @@ void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   moveMotorH(-1, horzontalSpeed, initHorizontaldist);  //distance between wells //this number will likely be tuned a lot
   if (stopRequested) return;
 
-  COMB.moveTo(-80000);                        //long steps in down direction
+  COMB.moveTo(-80000);  //long steps in down direction
   while (1) {
-    COMB.run();                       //get stuck here          // keep moving
+    COMB.run();  //get stuck here          // keep moving
     checkForStop();
-    if (stopRequested) { COMB.stop(); return; }
+    if (stopRequested) {
+      COMB.stop();
+      return;
+    }
     if (digitalRead(C_ready) == 0) {  //comb now at the ready position
       COMB.stop();
       COMB.setCurrentPosition(0);  //set
@@ -426,7 +460,7 @@ void readyComb() {
   COMB.setMaxSpeed(1000);
   COMB.setAcceleration(9999999);  //AGRESSIVE
   COMB.moveTo(9999999);           //posotive home direction
-  COMB.enableOutputs();           //idk pmo lowk
+  COMB.enableOutputs();           //idk pmo lowk (me too. i think it's for the enable pin on the driver but we handle that with GPIO so... idk)
   //home Magnet motor
   while (1) {
     //run the M motor
@@ -435,8 +469,11 @@ void readyComb() {
     }
     COMB.run();  //MOVE THE FUKIN MOTOR please
     checkForStop();
-    if (stopRequested) { COMB.stop(); return; }
- 
+    if (stopRequested) {
+      COMB.stop();
+      return;
+    }
+
     //Serial.println("I'm in the loop");
     if (combTriggered == true) {  //magnet home switch triggered
       COMB.stop();
@@ -450,46 +487,54 @@ void readyComb() {
 }
 
 void moveInitSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
-    if (stopAtSequences == 1) {
-      moveComb(1, 2, skipClearDist);   // lift comb clear of the rack wall
-      if (stopRequested) return;
-      moveMotorH(-1, speed, initHorizontaldist); // could be source of error?
-      if (stopRequested) return;
-      moveComb(-1, 2, skipClearDist);  // lower back down to ready height
-      return;
-    }
+  //huh??
+  // if (stopAtSequences == 1) {
+  //   moveComb(1, 2, skipClearDist);   // lift comb clear of the rack wall
+  //   if (stopRequested) return;
+  //   moveMotorH(-1, speed, initHorizontaldist); // could be source of error?
+  //   if (stopRequested) return;
+  //   moveComb(-1, 2, skipClearDist);  // lower back down to ready height
+  //   return;
+  // }
 
-    magnetPushComb(102.0); //push the magnets all the way down into the rack
-    homeMagnet(); // home all the way up
-    if (stopRequested) return;
-    magnetPushComb(102.0); //this is the distance from the magnet home to the bottom of the well rack
-    if (stopRequested) return;
-    if (!pauseableDelay(100)) return; //slight wait before pause so the time is consistanct
-    pauseMotors(initialSurfaceTime);  //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
-    if (stopRequested) return;
-    combPushMagnet(clearSampleDist);                    //move sample out of rack good
-    if (stopRequested) return;
+  magnetPushComb(102.0);  //push the magnets all the way down into the rack
+  homeMagnet();           // home all the way up
+  if (stopRequested) return;
+  magnetPushComb(102.0);  //this is the distance from the magnet home to the bottom of the well rack
+  if (stopRequested) return;
+  if (!pauseableDelay(100)) return;  //slight wait before pause so the time is consistanct
+  pauseMotors(initialSurfaceTime);   //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
+  if (stopRequested) return;
+  //stop at sequences implementation
+  for (int i = 0; i < stopAtSequences; i++) {
 
-    moveMotorH(-1, speed, initHorizontaldist);          //distance between wells //this number will likely be tuned a lot
+    combPushMagnet(clearSampleDist / stopAtSequences);
+    if (stopRequested) return;
+    pauseMotors(sequencePauseTime);
+  }
+  //combPushMagnet(clearSampleDist);                    //move sample out of rack good
+  if (stopRequested) return;
 
-    if (stopRequested) return;
-    magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
-    if (stopRequested) return;
-    if (!pauseableDelay(200)) return;                   //slight wait
-    homeMagnet();                                       //testing...working????? working!!!
-    if (stopRequested) return;
-    readyComb();                                        //put the  combs above the well at the consistant spot
+  moveMotorH(-1, speed, initHorizontaldist);  //distance between wells //this number will likely be tuned a lot
+
+  if (stopRequested) return;
+  magnetPushComb(clearSampleDist + clamplingOffset);  // for some reason the magnet axis is going upwards slightly before going back down to push on the combs
+  if (stopRequested) return;
+  if (!pauseableDelay(200)) return;  //slight wait
+  homeMagnet();                      //testing...working????? working!!!
+  if (stopRequested) return;
+  readyComb();  //put the  combs above the well at the consistant spot
 }
 
 void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
-  if (stopAtSequences == 1) {
-    moveComb(1, 2, skipClearDist);   // lift comb clear of the rack wall
-    if (stopRequested) return;
-    moveMotorH(-1, speed, normHorizontaldist); //could be source of error?
-    if (stopRequested) return;
-    moveComb(-1, 2, skipClearDist);  // lower back down to ready height
-    return;
-  }
+  // if (stopAtSequences == 1) {
+  //   moveComb(1, 2, skipClearDist);  // lift comb clear of the rack wall
+  //   if (stopRequested) return;
+  //   moveMotorH(-1, speed, normHorizontaldist);  //could be source of error?
+  //   if (stopRequested) return;
+  //   moveComb(-1, 2, skipClearDist);  // lower back down to ready height
+  //   return;
+  // }
 
 
   magnetPushComb(102.0);
@@ -500,11 +545,17 @@ void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   if (!pauseableDelay(100)) return;
   pauseMotors(initialSurfaceTime);
   if (stopRequested) return;
-  combPushMagnet(clearSampleDist);
+  //stop at sequences implementation
+  for (int i = 0; i < stopAtSequences; i++) {
+    combPushMagnet(clearSampleDist / stopAtSequences);
+    if (stopRequested) return;
+    pauseMotors(sequencePauseTime);
+  }
+  //combPushMagnet(clearSampleDist);
   if (stopRequested) return;
 
 
-  moveMotorH(-1, speed, normHorizontaldist); //yes
+  moveMotorH(-1, speed, normHorizontaldist);  //yes
 
 
   if (stopRequested) return;
@@ -516,10 +567,10 @@ void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   readyComb();
 }
 
-void homeMagnet() {              // working now
-                                 //configure magnet axis
-  bool magnetTriggered = false;  //
-  MAGNET.setMaxSpeed(1000); //was 800
+void homeMagnet() {                 // working now
+                                    //configure magnet axis
+  bool magnetTriggered = false;     //
+  MAGNET.setMaxSpeed(1000);         //was 800
   MAGNET.setAcceleration(9999999);  //AGRESSIVE
   MAGNET.moveTo(9999999);           //posotive home direction
   MAGNET.enableOutputs();           //idk pmo lowk
@@ -531,8 +582,11 @@ void homeMagnet() {              // working now
     }
     MAGNET.run();  //MOVE THE FUKIN MOTOR please
     checkForStop();
-    if (stopRequested) { MAGNET.stop(); return; }
-  
+    if (stopRequested) {
+      MAGNET.stop();
+      return;
+    }
+
     //Serial.println("I'm in the loop");
     if (magnetTriggered == true) {  //magnet home switch triggered
       MAGNET.stop();
@@ -559,7 +613,10 @@ void moveMotorH(int DIR, uint32_t speed, float distance) {  // 1 step is 1.8 deg
     //run motor
     HORIZONTAL.run();
     checkForStop();
-    if (stopRequested) { HORIZONTAL.stop(); return; }
+    if (stopRequested) {
+      HORIZONTAL.stop();
+      return;
+    }
 
     //Serial.println("I'm in the loop");
     if (HORIZONTAL.distanceToGo() == 0) {
@@ -597,14 +654,17 @@ void moveMotorM(uint32_t DIR, uint32_t speed, float distance) {  // 1 step is 1.
     //run motor
     MAGNET.run();
     checkForStop();
-    if (stopRequested) { MAGNET.stop(); return; }
+    if (stopRequested) {
+      MAGNET.stop();
+      return;
+    }
 
     //Serial.println("I'm in the loop");
     if (MAGNET.distanceToGo() == 0) {  //break when the steps have steppec
       MAGNET.stop();
       break;
     }
-      //Serial.println("I broke the loop");
+    //Serial.println("I broke the loop");
     delayMicroseconds(500);  // or try 100–500 µ
   }
 }
@@ -638,7 +698,10 @@ void moveComb(int DIR, uint32_t speed, float distance) {  //
     //run the A motor
     COMB.run();
     checkForStop();
-    if (stopRequested) { COMB.stop(); return; }
+    if (stopRequested) {
+      COMB.stop();
+      return;
+    }
 
     //Serial.println("I'm in the loop");
     if (COMB.distanceToGo() == 0) {
@@ -683,8 +746,8 @@ void combPushMagnet(float pushDist) {  //working...just kidding
   // while (COMB.distanceToGo() != 0) {
   //   COMB.run();  //run
   // }
-  if (!pauseableDelay(200)) return; //give the motor a chance to be in a fixed position...i heard a click and got scared
-  digitalWrite(MAGNET_EN, LOW);  //magnet on to save its place
+  if (!pauseableDelay(200)) return;  //give the motor a chance to be in a fixed position...i heard a click and got scared
+  digitalWrite(MAGNET_EN, LOW);      //magnet on to save its place
 }
 //logic to use the magnet axis to push the comb axis up so we can stay clamped together without losing the smaple
 void magnetPushComb(float pushDist) {
@@ -696,8 +759,8 @@ void magnetPushComb(float pushDist) {
   // while (MAGNET.distanceToGo() != 0) {
   //   MAGNET.run();  //run
   // }
-  if (!pauseableDelay(200)) return; //give the motor a chance to be in a fixed position...i heard a click and got scared
-  digitalWrite(COMB_EN, LOW);  //comb on to save its place
+  if (!pauseableDelay(200)) return;  //give the motor a chance to be in a fixed position...i heard a click and got scared
+  digitalWrite(COMB_EN, LOW);        //comb on to save its place
 }
 
 // /**
@@ -729,8 +792,8 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
   //30 mm is the distance between the tip of the combs inserted into the wells and the bottom of the wells
   // Convert input values to physical parameters
   uint16_t agitationFrequency = mapAgitationSpeedC(agitateSpeed);  // Frequency in steps/sec
-  COMB.setMaxSpeed(agitationFrequency);                   // High speed target
-  COMB.setAcceleration(mapAgitationAccelerationC(agitateSpeed));                          // Very aggressive acceleration
+  COMB.setMaxSpeed(agitationFrequency);                            // High speed target
+  COMB.setAcceleration(mapAgitationAccelerationC(agitateSpeed));   // Very aggressive acceleration
 
   // Define positions
   uint16_t top = abs((totalVolume / 50.0) - (42.2) + 0.5f);  //plus initia position??? was 50 well hright -(42.2)
@@ -749,7 +812,10 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
   while (COMB.distanceToGo() != 0) {
     COMB.run();
     checkForStop();
-    if (stopRequested) { COMB.stop(); return 0; }
+    if (stopRequested) {
+      COMB.stop();
+      return 0;
+    }
   }
   if (!pauseableDelay(2000)) return 0;
 
@@ -757,13 +823,19 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
   while (COMB.distanceToGo() != 0) {
     COMB.run();
     checkForStop();
-    if (stopRequested) { COMB.stop(); return 0; }
+    if (stopRequested) {
+      COMB.stop();
+      return 0;
+    }
   }
 
   while ((unsigned long)(millis() - startTime) - (totalPausedMillis - pausedAtStart) < totalMs) {
     COMB.run();
     checkForStop();
-    if (stopRequested) { COMB.stop(); return 0; }
+    if (stopRequested) {
+      COMB.stop();
+      return 0;
+    }
     if (COMB.distanceToGo() == 0) {
       COMB.move(movingDown * agitSteps);
       movingDown = movingDown * -1;
@@ -775,39 +847,39 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
 }
 
 
-  //-------previous code without saving duration left for Pause fucntion:
+//-------previous code without saving duration left for Pause fucntion:
 
-  // // Start timed agitation loop
-  // unsigned long startTime = millis();  //snag initial time
+// // Start timed agitation loop
+// unsigned long startTime = millis();  //snag initial time
 
-  // //move to top of sample volume
-  // COMB.moveTo(-topSteps);             //topSteps
-  // while (COMB.distanceToGo() != 0) {  // do comb run
-  //   COMB.run();                       // run until we are at the top of the solution
-  //   if (checkForStop()) { COMB.stop(); return 0; }
-  // }
-  // delay(2000);
+// //move to top of sample volume
+// COMB.moveTo(-topSteps);             //topSteps
+// while (COMB.distanceToGo() != 0) {  // do comb run
+//   COMB.run();                       // run until we are at the top of the solution
+//   if (checkForStop()) { COMB.stop(); return 0; }
+// }
+// delay(2000);
 
-  // //move to percent depth of liquid
-  // COMB.move(-agitSteps);
-  // while (COMB.distanceToGo() != 0) {
-  //   COMB.run();
-  //   if (checkForStop()) { COMB.stop(); return 0; }
-  // }
+// //move to percent depth of liquid
+// COMB.move(-agitSteps);
+// while (COMB.distanceToGo() != 0) {
+//   COMB.run();
+//   if (checkForStop()) { COMB.stop(); return 0; }
+// }
 
-  // //alternate direcitons
-  // while (millis() - startTime < (agitateDuration * 1000)) {  //millis() - startTime < (agitateDuration * 1000)
-  //   COMB.run();
-  //   if (checkForStop()) { COMB.stop(); return 0; }                                              // run the motor
-  //   if (COMB.distanceToGo() == 0) {                          //check if we hit the desired agitation depth
-  //     //COMB.moveTo(movingDown ? top : agitDistance); //changed bottom to agitDistance
-  //     COMB.move(movingDown * agitSteps);
-  //     movingDown = movingDown * -1;
-  //   }
-  // }
+// //alternate direcitons
+// while (millis() - startTime < (agitateDuration * 1000)) {  //millis() - startTime < (agitateDuration * 1000)
+//   COMB.run();
+//   if (checkForStop()) { COMB.stop(); return 0; }                                              // run the motor
+//   if (COMB.distanceToGo() == 0) {                          //check if we hit the desired agitation depth
+//     //COMB.moveTo(movingDown ? top : agitDistance); //changed bottom to agitDistance
+//     COMB.move(movingDown * agitSteps);
+//     movingDown = movingDown * -1;
+//   }
+// }
 
-  // COMB.stop();  //hault
-  // return 1;
+// COMB.stop();  //hault
+// return 1;
 // }
 
 //set all motor axis to a set 000 position
@@ -962,21 +1034,32 @@ bool verifyBuffer() {
 
     switch (parsed.type) {
       case AGITATION:
-        Serial.print("AGITATION speed="); Serial.print(parsed.speed);
-        Serial.print(" duration="); Serial.print(parsed.duration);
-        Serial.print(" volume="); Serial.print(parsed.volume);
-        Serial.print(" percent="); Serial.print(parsed.percentVolume);
-        Serial.print(" pause="); Serial.print(parsed.pausetime);
-        Serial.print(" repeats="); Serial.println(parsed.repeats);
+        Serial.print("AGITATION speed=");
+        Serial.print(parsed.speed);
+        Serial.print(" duration=");
+        Serial.print(parsed.duration);
+        Serial.print(" volume=");
+        Serial.print(parsed.volume);
+        Serial.print(" percent=");
+        Serial.print(parsed.percentVolume);
+        Serial.print(" pause=");
+        Serial.print(parsed.pausetime);
+        Serial.print(" repeats=");
+        Serial.println(parsed.repeats);
         break;
       case MOVING:
-        Serial.print("MOVING surfaceTime="); Serial.print(parsed.initialSurfaceTime);
-        Serial.print(" speed="); Serial.print(parsed.speed);
-        Serial.print(" stopAt="); Serial.print(parsed.stopAtSequences);
-        Serial.print(" seqPause="); Serial.println(parsed.sequencePauseTime);
+        Serial.print("MOVING surfaceTime=");
+        Serial.print(parsed.initialSurfaceTime);
+        Serial.print(" speed=");
+        Serial.print(parsed.speed);
+        Serial.print(" stopAt=");
+        Serial.print(parsed.stopAtSequences);
+        Serial.print(" seqPause=");
+        Serial.println(parsed.sequencePauseTime);
         break;
       case PAUSING:
-        Serial.print("PAUSING duration="); Serial.println(parsed.duration);
+        Serial.print("PAUSING duration=");
+        Serial.println(parsed.duration);
         break;
       case INVALID:
         Serial.println("INVALID");
@@ -998,7 +1081,7 @@ void runProtocol(bool dryRun) {
   protocolPaused = false;
   Serial.println("ASATS:STATE:RUNNING:STEP=1:WELL=1");
   home();
-  wellIndex = 1;   // reset for each run
+  wellIndex = 1;  // reset for each run
 
   for (int i = 0; i < stepCount; i++) {
     char buf[32];
@@ -1014,12 +1097,18 @@ void runProtocol(bool dryRun) {
     switch (parsed.type) {
       case AGITATION:
         Serial.print("agitateMotors(");
-        Serial.print(parsed.speed); Serial.print(", ");
-        Serial.print(parsed.duration); Serial.print(", ");
-        Serial.print(parsed.volume); Serial.print(", ");
-        Serial.print(parsed.percentVolume); Serial.print(") x");
+        Serial.print(parsed.speed);
+        Serial.print(", ");
+        Serial.print(parsed.duration);
+        Serial.print(", ");
+        Serial.print(parsed.volume);
+        Serial.print(", ");
+        Serial.print(parsed.percentVolume);
+        Serial.print(") x");
         Serial.print(parsed.repeats);
-        Serial.print(", pause "); Serial.print(parsed.pausetime); Serial.println("s between");
+        Serial.print(", pause ");
+        Serial.print(parsed.pausetime);
+        Serial.println("s between");
         if (!dryRun) {
           for (int r = 0; r < parsed.repeats; r++) {
             agitateMotors(parsed.speed, parsed.duration, parsed.volume, parsed.percentVolume);
@@ -1030,7 +1119,9 @@ void runProtocol(bool dryRun) {
         break;
 
       case PAUSING:
-        Serial.print("pauseMotors("); Serial.print(parsed.duration); Serial.println(")");
+        Serial.print("pauseMotors(");
+        Serial.print(parsed.duration);
+        Serial.println(")");
         if (!dryRun) pauseMotors(parsed.duration);
         break;
 
@@ -1058,7 +1149,6 @@ void runProtocol(bool dryRun) {
     // Catch a command received during the final short delay of this entry.
     checkForStop();
     if (stopRequested) break;
-
   }
 
   if (stopRequested) {
