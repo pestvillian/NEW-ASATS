@@ -514,6 +514,8 @@ def build_flat_steps():
 
 
 def validation_message():
+    if needs_home:
+        return "Press Home / Stop before sending the next protocol"
     if last_well_num is None:
         return "Mark a well as the last well to complete the protocol"
     _, missing = build_flat_steps()
@@ -533,11 +535,12 @@ def result_label_set(text):
     result_label.config(text=text)
 
 
+
 # ============================================================
 #  Main UI refresh
 # ============================================================
 def update_ui():
-    send_button.config(state="normal" if board_connected and not send_in_progress and is_protocol_valid() else "disabled")
+    send_button.config(state="normal" if board_connected and not send_in_progress and not needs_home and is_protocol_valid() else "disabled")
     connect_button.config(state="disabled" if board_connected else "normal")
     validation_label.config(text=validation_message())
 
@@ -585,42 +588,63 @@ def update_ui():
 # ============================================================
 #  Send
 # ============================================================
+
+
 def estimate_total_seconds(steps):
-    """Rough estimate of run duration from encoded steps. Undercounts homing,
-    motion, and clamping overhead — treat as a floor, not exact."""
+    """Estimated run time from measured timings (Sep 2026).
+    Agitation approach time only measured at vol 1000 / 20% / speed 1."""
+    AGITATION_APPROACH = 4.5   # s: move to liquid + 2 s settle + move to depth
+    MOVE_BASE = 19.1           # s: baseline move (0 attach, 1 stage, 0 pause), incl. 2 s delay
+    HANDOFF_EXTRA = 0.45       # s: passSample (6 -> 8) vs normal move
+    STAGE_OVERHEAD = 0.2       # s: settle per extra lift stage
+    END_COST = 1.8             # s: final readyComb after a last agitation
+
     total = 0
+    well = 1                   # mirrors the firmware's wellIndex
     for s in steps:
         if s.startswith("A"):
             duration = int(s[2:4])
             pausetime = int(s[10:12])
             repeats = int(s[12:14])
-            total += repeats * (duration + pausetime)
+            total += repeats * (0.2 + max(duration, AGITATION_APPROACH) + pausetime)
         elif s.startswith("M"):
             initial_surface_time = int(s[1:4])
             stops = int(s[5])
-            seqPause = int(s[6:8])
-            total += initial_surface_time + 10 + stops * seqPause  # rough buffer for the physical move itself
+            seq_pause = int(s[6:8])
+            total += MOVE_BASE + initial_surface_time + stops * seq_pause + STAGE_OVERHEAD * (stops - 1)
+            if well == 6:
+                total += HANDOFF_EXTRA
+                well = 8           # handoff skips well 7
+            else:
+                well += 1
         elif s.startswith("P"):
-            duration = int(s[1:2])
-            total += duration
+            total += int(s[1:2])
+
+    if steps and steps[-1].startswith("A"):
+        total += END_COST
     return total
 
 
 send_in_progress = False
 board_connected = False
+# True after a run completes: robot is at the last well, but the next run's
+# firmware assumes well 1. Cleared by Home/Stop (RESULT=STOPPED) or by
+# connecting (board resets and setup() homes it).
+needs_home = False
 protocol_timer_active = False
 protocol_started_at = None
 protocol_paused_at = None
 protocol_paused_seconds = 0.0
 
 def connect_to_board():
-    global board_connected
+    global board_connected, needs_home
     connect_button.config(state="disabled")   # block double-clicks while connecting
     result_label_set("Connecting; the board will restart and home...")
     root.update_idletasks()
     try:
         connect(TERRY_PORT, BAUD_RATE)
         board_connected = True
+        needs_home = False   # board resets on connect and setup() homes it
         result_label_set("Connected")
         update_ui()
     except serial.SerialException as e:
@@ -637,6 +661,9 @@ def send_protocol():
     if not board_connected:
         result_label_set("Connect to the board before sending a protocol")
         return
+    if needs_home:
+        result_label_set("Press Home / Stop before sending the next protocol")
+        return
     if not is_protocol_valid():
         result_label_set(validation_message())
         return
@@ -644,6 +671,7 @@ def send_protocol():
     if not flat_steps:
         result_label_set("Nothing to send yet")
         return
+    estimated_total = estimate_total_seconds(flat_steps)
 
     full_text = "\r\n".join(flat_steps) + "\r\nEND"
     print("Sending full protocol:\n" + full_text)
@@ -666,7 +694,12 @@ def send_protocol():
                 paused_now = time.time() - protocol_paused_at
             elapsed = int(time.time() - protocol_started_at - protocol_paused_seconds - paused_now)
             state = "Paused" if protocol_paused_at is not None else "Running"
-            timer_label.config(text=f"{state}: {elapsed // 60}:{elapsed % 60:02d}")
+            remaining = int(round(estimated_total - elapsed))
+            if remaining >= 0:
+                timer_label.config(text=f"{state}: {remaining // 60}:{remaining % 60:02d} left")
+            else:
+                over = -remaining
+                timer_label.config(text=f"{state}: finishing\u2026 (+{over // 60}:{over % 60:02d})")
             root.after(1000, tick)
 
     tick()
@@ -675,11 +708,12 @@ def send_protocol():
 def drain_serial_events():
     """Run in Tk's main thread; reader threads never touch Tk widgets."""
     global board_connected, send_in_progress, protocol_timer_active
-    global protocol_paused_at, protocol_paused_seconds
+    global protocol_paused_at, protocol_paused_seconds, needs_home
     for event_type, value in get_events():
         if event_type == "connection":
             if value == "CONNECTED":
                 board_connected = True
+                needs_home = False   # reconnect resets the board, which homes in setup()
             else:
                 board_connected = False
                 send_in_progress = False
@@ -704,7 +738,12 @@ def drain_serial_events():
             protocol_timer_active = False
             protocol_paused_at = None
             timer_label.config(text="")
-            result_label_set("Protocol complete" if "RESULT=COMPLETE" in value else "Stopped and homed")
+            if "RESULT=COMPLETE" in value:
+                needs_home = True    # robot is parked at the last well
+                result_label_set("Protocol complete \u2014 press Home / Stop before the next run")
+            else:
+                needs_home = False   # RESULT=STOPPED means stopProtocol() re-homed
+                result_label_set("Stopped and homed")
             update_ui()
         elif value.startswith("ASATS:ERROR:"):
             result_label_set(value)

@@ -1,0 +1,144 @@
+{
+  "name": "Check2",
+  "wells": {
+    "1": {
+      "steps": [
+        {
+          "type": "AGITATION",
+          "values": {
+            "speed": 1,
+            "duration": 1,
+            "volume": 1,
+            "percent_volume": 1,
+            "pausetime": 1,
+            "repeats": 9
+          }
+        },
+        {
+          "type": "AGITATION",
+          "values": {
+            "speed": 3,
+            "duration": 3,
+            "volume": 3,
+            "percent_volume": 3,
+            "pausetime": 3,
+            "repeats": 3
+          }
+        }
+      ],
+      "moving_step": {
+        "type": "MOVING",
+        "values": {
+          "initial_surface_time": 1,
+          "speed": 1,
+          "stop_at_sequences": 1,
+          "sequence_pause_time": 1
+        }
+      }
+    },
+    "2": {
+      "steps": [
+        {
+          "type": "AGITATION",
+          "values": {
+            "speed": 1,
+            "duration": 1,
+            "volume": 1,
+            "percent_volume": 1,
+            "pausetime": 1,
+            "repeats": 1
+          }
+        },
+        {
+          "type": "AGITATION",
+          "values": {
+            "speed": 1,
+            "duration": 1,
+            "volume": 1,
+            "percent_volume": 1,
+            "pausetime": 1,
+            "repeats": 1
+          }
+        }
+      ],
+      "moving_step": {
+        "type": "MOVING",
+        "values": {
+          "initial_surface_time": 2,
+          "speed": 2,
+          "stop_at_sequences": 2,
+          "sequence_pause_time": 2
+        }
+      }
+    },
+    "3": {
+      "steps": [
+        {
+          "type": "AGITATION",
+          "values": {
+            "speed": 3,
+            "duration": 3,
+            "volume": 3,
+            "percent_volume": 3,
+            "pausetime": 3,
+            "repeats": 3
+          }
+        }
+      ],
+      "moving_step": {
+        "type": "MOVING",
+        "values": {
+          "initial_surface_time": 3,
+          "speed": 3,
+          "stop_at_sequences": 3,
+          "sequence_pause_time": 3
+        }
+      }
+    },
+    "4": {
+      "steps": [
+        {
+          "type": "AGITATION",
+          "values": {
+            "speed": 4,
+            "duration": 4,
+            "volume": 4,
+            "percent_volume": 4,
+            "pausetime": 4,
+            "repeats": 4
+          }
+        }
+      ],
+      "moving_step": null
+    },
+    "5": {
+      "steps": [],
+      "moving_step": null
+    },
+    "6": {
+      "steps": [],
+      "moving_step": null
+    },
+    "8": {
+      "steps": [],
+      "moving_step": null
+    },
+    "9": {
+      "steps": [],
+      "moving_step": null
+    },
+    "10": {
+      "steps": [],
+      "moving_step": null
+    },
+    "11": {
+      "steps": [],
+      "moving_step": null
+    },
+    "12": {
+      "steps": [],
+      "moving_step": null
+    }
+  },
+  "last_well_num": 4
+}
