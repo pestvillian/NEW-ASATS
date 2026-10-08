@@ -35,6 +35,11 @@
 
 #define skipClearDist 8.0  // PLACEHOLDER — mm to lift comb clear before a skip move; tune on hardware
 
+//lower comb to take out wells
+#define combLower 2.9  // mm to park comb below C_ready after homing; tune on hardware
+
+#define stageLoweringOffset 8.0
+
 
 
 
@@ -237,11 +242,23 @@ void stopProtocol() {
   // what broke home-at-start earlier)
 
 
+  // A Stop mid-handoff can leave one driver disabled. Turn them all back on.
+  digitalWrite(HORIZONTAL_EN, LOW);
+  digitalWrite(COMB_EN, LOW);
+  digitalWrite(MAGNET_EN, LOW);
+
+  // Zero AccelStepper's internal speed so homing starts from rest,
+  // not mid-reversal from whatever move was interrupted.
+  HORIZONTAL.setCurrentPosition(HORIZONTAL.currentPosition());
+  MAGNET.setCurrentPosition(MAGNET.currentPosition());
+  COMB.setCurrentPosition(COMB.currentPosition());
+
+
   HORIZONTAL.setMaxSpeed(700);
   HORIZONTAL.setAcceleration(9999);
   HORIZONTAL.moveTo(1600);
 
-  MAGNET.setMaxSpeed(800);
+  MAGNET.setMaxSpeed(400);
   MAGNET.setAcceleration(999999);
   MAGNET.moveTo(100000);
 
@@ -378,7 +395,7 @@ void setup() {
 //after moveSample has been called 6 times we want to rehome the gantry head and continue with the rest of the SM
 void passSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequences, uint32_t sequencePauseTime) {
   //move from one well to the next
-  magnetPushComb(102.0);             //push the magnets all the way down into the rack
+  magnetPushComb(102.0 + stageLoweringOffset);             //push the magnets all the way down into the rack
   if (!pauseableDelay(100)) return;  //slight wait before pause so the time is consistanct
   pauseMotors(initialSurfaceTime);   //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
   if (stopRequested) return;
@@ -497,10 +514,11 @@ void moveInitSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAt
   //   return;
   // }
 
-  magnetPushComb(102.0);  //push the magnets all the way down into the rack
+  magnetPushComb(102.0 + stageLoweringOffset);  //push the magnets all the way down into the rack
+  if (stopRequested) return;   // add this
   homeMagnet();           // home all the way up
   if (stopRequested) return;
-  magnetPushComb(102.0);  //this is the distance from the magnet home to the bottom of the well rack
+  magnetPushComb(102.0  + stageLoweringOffset);  //this is the distance from the magnet home to the bottom of the well rack
   if (stopRequested) return;
   if (!pauseableDelay(100)) return;  //slight wait before pause so the time is consistanct
   pauseMotors(initialSurfaceTime);   //wait to let the beads attach to combs USE THE RIGHT FUKIN VAR THOUGH
@@ -537,10 +555,11 @@ void moveSample(uint32_t initialSurfaceTime, uint32_t speed, uint32_t stopAtSequ
   // }
 
 
-  magnetPushComb(102.0);
+  magnetPushComb(102.0 + stageLoweringOffset);
+  if (stopRequested) return;   // add this
   homeMagnet();
   if (stopRequested) return;
-  magnetPushComb(102.0);
+  magnetPushComb(102.0 + stageLoweringOffset);
   if (stopRequested) return;
   if (!pauseableDelay(100)) return;
   pauseMotors(initialSurfaceTime);
@@ -802,7 +821,7 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
   uint16_t agitSteps = distanceToStepsC(agitDistance);
   int movingDown = 1;  //should initially be true
 
-  uint16_t topSteps = distanceToStepsC(top);  //
+  uint16_t topSteps = distanceToStepsC(top + stageLoweringOffset);  //
 
   uint32_t totalMs = agitateDuration * 1000;
   unsigned long startTime = millis();
@@ -959,6 +978,7 @@ uint8_t home() {
       }
     }
     COMB.stop();  //hault motor
+    moveComb(-1, 2, combLower);  // park lower; zero stays at the sensor
   } else {
     homed = 0;
   }
@@ -1080,7 +1100,6 @@ void runProtocol(bool dryRun) {
   pauseRequested = false;
   protocolPaused = false;
   Serial.println("ASTATS:STATE:RUNNING:STEP=1:WELL=1");
-  home();
   wellIndex = 1;  // reset for each run
 
   bool lastStepWasMove = false;   // declare before the for loop in runProtocol
@@ -1174,7 +1193,7 @@ void runProtocol(bool dryRun) {
   Serial.print(wellIndex);
   Serial.println(" ---");
   protocolRunning = false;
-  Serial.print("ASATS:STATE:IDLE:RESULT=COMPLETE:WELL=");
+  Serial.print("ASTATS:STATE:IDLE:RESULT=COMPLETE:WELL=");
   Serial.println(wellIndex);
 }
 
