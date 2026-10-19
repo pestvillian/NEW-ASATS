@@ -41,6 +41,10 @@
 #define stageLoweringOffset 8.0
 
 
+#define agitBottom 30.0 //stop hitting bottom
+#define mixRaise 8.0 //start mixing higher
+
+
 
 
 // --- Create Stepper Instances ---
@@ -817,11 +821,14 @@ uint8_t agitateMotors(uint16_t agitateSpeed, uint16_t agitateDuration, uint16_t 
   // Define positions
   uint16_t top = abs((totalVolume / 50.0) - (42.2) + 0.5f);  //plus initia position??? was 50 well hright -(42.2)
 
-  uint16_t agitDistance = (abs(top - 42.2) * (percentDepth / 100.0));  //percentage of liquid to be displaced
+  float startDepth = top + stageLoweringOffset - mixRaise;   // top of every stroke
+  float bottomDepth = agitBottom + stageLoweringOffset;      // fix deepest point at 100%
+
+  float agitDistance = (bottomDepth - startDepth) * (percentDepth / 100.0);
   uint16_t agitSteps = distanceToStepsC(agitDistance);
   int movingDown = 1;  //should initially be true
 
-  uint16_t topSteps = distanceToStepsC(top + stageLoweringOffset);  //
+  uint16_t topSteps = distanceToStepsC(startDepth);  //
 
   uint32_t totalMs = agitateDuration * 1000;
   unsigned long startTime = millis();
